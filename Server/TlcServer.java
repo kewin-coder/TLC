@@ -9,26 +9,40 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** TLC starter API. In-memory only; trusted LAN prototype, not production-secure. */
+/** TLC starter API. Account approval is required for all message access. */
 public final class TlcServer {
-    private static final int PORT = 8080;
+    private static final int PORT = Integer.parseInt(System.getenv().getOrDefault("TLC_PORT", "8080"));
     private static final int MAX_BODY = 4096;
     private static final List<Map<String,String>> MESSAGES = new CopyOnWriteArrayList<>();
     private static final Pattern FIELD = Pattern.compile("\\\"(sender|text)\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"");
+    private static AccountApi accountApi;
     private TlcServer() {}
 
     public static void main(String[] args) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
-        server.createContext("/api/status", e -> { cors(e); if (preflight(e)) return; if (!method(e,"GET")) return; send(e,200,"{\\\"status\\\":\\\"TLC Java connected\\\",\\\"version\\\":\\\"chat-prototype\\\"}","application/json; charset=utf-8"); });
+        String jdbcUrl = System.getenv().getOrDefault("TLC_DATABASE_URL", "jdbc:sqlite:tlc.db");
+        try {
+            accountApi = new AccountApi(server, jdbcUrl);
+        } catch (Exception ex) {
+            server.stop(0);
+            throw new IOException("TLC account services failed to initialize; refusing to start unprotected", ex);
+        }
+        server.createContext("/api/status", e -> { cors(e); if (preflight(e)) return; if (!method(e,"GET")) return; send(e,200,"{\"status\":\"TLC Java connected\",\"version\":\"account-gated\"}","application/json; charset=utf-8"); });
         server.createContext("/api/messages", TlcServer::messages);
         server.createContext("/", e -> { cors(e); if (preflight(e)) return; send(e,200,"TLC server is running. Use /api/status and /api/messages.","text/plain; charset=utf-8"); });
         server.setExecutor(null); server.start();
-        System.out.println("TLC server listening on port " + PORT);
+        System.out.println("TLC server listening on port " + PORT + " (account approval enforced)");
     }
     private static void cors(HttpExchange e) {
-        e.getResponseHeaders().set("Access-Control-Allow-Origin","*");
+        // Same-origin by default. Configure a specific trusted origin if hosting the UI separately.
+        String allowed = System.getenv("TLC_ALLOWED_ORIGIN");
+        String origin = e.getRequestHeaders().getFirst("Origin");
+        if (allowed != null && !allowed.isBlank() && allowed.equals(origin)) {
+            e.getResponseHeaders().set("Access-Control-Allow-Origin", allowed);
+            e.getResponseHeaders().set("Access-Control-Allow-Credentials", "true");
+        }
         e.getResponseHeaders().set("Access-Control-Allow-Methods","GET, POST, OPTIONS");
-        e.getResponseHeaders().set("Access-Control-Allow-Headers","Content-Type");
+        e.getResponseHeaders().set("Access-Control-Allow-Headers","Content-Type, X-TLC-Admin-Secret");
         e.getResponseHeaders().set("Vary","Origin");
     }
     private static boolean preflight(HttpExchange e) throws IOException {
@@ -41,6 +55,8 @@ public final class TlcServer {
     }
     private static void messages(HttpExchange e) throws IOException {
         cors(e); if (preflight(e)) return;
+        // Fail closed: no message reads or writes without a valid approved session.
+        if (accountApi == null || !accountApi.requireApproved(e)) return;
         if ("GET".equalsIgnoreCase(e.getRequestMethod())) {
             StringBuilder out=new StringBuilder("{\"messages\":[");
             for(int i=0;i<MESSAGES.size();i++){ if(i>0)out.append(','); Map<String,String> m=MESSAGES.get(i); out.append("{\"sender\":\"").append(escape(m.get("sender"))).append("\",\"text\":\"").append(escape(m.get("text"))).append("\",\"time\":\"").append(escape(m.get("time"))).append("\"}"); }
