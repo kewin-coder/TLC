@@ -22,9 +22,24 @@ public final class TlcServer {
         System.out.println("Status: http://localhost:" + PORT + "/api/status");
     }
 
+    private static void addCorsHeaders(HttpExchange exchange) {
+        // Prototype only: restrict this to your actual client origin before production.
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+        exchange.getResponseHeaders().set("Vary", "Origin");
+    }
+
     private static void status(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Allow", "GET, OPTIONS");
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-            exchange.getResponseHeaders().set("Allow", "GET");
+            exchange.getResponseHeaders().set("Allow", "GET, OPTIONS");
             send(exchange, 405, "{\"error\":\"Method not allowed\"}", "application/json; charset=utf-8");
             return;
         }
@@ -33,6 +48,11 @@ public final class TlcServer {
     }
 
     private static void homeHint(HttpExchange exchange) throws IOException {
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Allow", "GET");
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
         send(exchange, 200, "TLC server is running. Check /api/status.", "text/plain; charset=utf-8");
     }
 
