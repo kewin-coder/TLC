@@ -8,11 +8,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Instant;
-import java.util.LinkedHashMap;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -23,11 +21,11 @@ public final class TlcServer {
     private static final int MAX_MESSAGE_CHARS = 1000;
     private static final int MAX_MESSAGES = 500;
     private static final Path CLIENT_ROOT = Paths.get(System.getenv().getOrDefault("TLC_CLIENT_DIR", "Client")).toAbsolutePath().normalize();
-    private static final List<Map<String, String>> MESSAGES = new CopyOnWriteArrayList<>();
     private static final Pattern JSON_FIELD = Pattern.compile(
             "\\\"(sender|text)\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"");
 
     private static AccountApi accountApi;
+    private static ServerDependencies1 dependencies;
 
     private TlcServer() { }
 
@@ -47,9 +45,10 @@ public final class TlcServer {
         String jdbcUrl = System.getenv().getOrDefault("TLC_DATABASE_URL", "jdbc:sqlite:tlc.db");
         try {
             accountApi = new AccountApi(server, jdbcUrl);
+            dependencies = new ServerDependencies1(jdbcUrl, MAX_MESSAGES);
         } catch (Exception ex) {
             server.stop(0);
-            throw new IOException("TLC account services failed to initialize; refusing to start unprotected", ex);
+            throw new IOException("TLC database services failed to initialize; refusing to start", ex);
         }
 
         server.createContext("/api/status", exchange -> {
@@ -57,7 +56,7 @@ public final class TlcServer {
             if (preflight(exchange)) return;
             if (!method(exchange, "GET")) return;
             send(exchange, 200,
-                    "{\"status\":\"TLC Java connected\",\"version\":\"account-gated\"}",
+                    "{\"status\":\"TLC Java connected\",\"version\":\"account-gated-persistent-messages\"}",
                     "application/json; charset=utf-8");
         });
         server.createContext("/api/messages", TlcServer::handleMessages);
@@ -181,14 +180,18 @@ public final class TlcServer {
             send(exchange, 405, "{\"error\":\"Method not allowed\"}", "application/json; charset=utf-8");
             return;
         }
-        if (accountApi == null) {
-            send(exchange, 503, "{\"error\":\"Account service unavailable\"}", "application/json; charset=utf-8");
+        if (accountApi == null || dependencies == null) {
+            send(exchange, 503, "{\"error\":\"Message service unavailable\"}", "application/json; charset=utf-8");
             return;
         }
         String username = accountApi.approvedUsername(exchange);
         if (username == null) return;
         if (reading) {
-            send(exchange, 200, messagesJson(), "application/json; charset=utf-8");
+            try {
+                send(exchange, 200, messagesJson(dependencies.latestMessages()), "application/json; charset=utf-8");
+            } catch (SQLException ex) {
+                send(exchange, 500, "{\"error\":\"Could not load messages\"}", "application/json; charset=utf-8");
+            }
             return;
         }
         byte[] body = exchange.getRequestBody().readNBytes(MAX_BODY_BYTES + 1);
@@ -197,17 +200,16 @@ public final class TlcServer {
             return;
         }
         String text = extractText(new String(body, StandardCharsets.UTF_8));
-        if (text == null || text.trim().isEmpty() || text.length() > MAX_MESSAGE_CHARS) {
+        if (text == null || text.trim().isEmpty() || text.trim().length() > MAX_MESSAGE_CHARS) {
             send(exchange, 400, "{\"error\":\"Provide text (1-1000 characters)\"}", "application/json; charset=utf-8");
             return;
         }
-        Map<String, String> message = new LinkedHashMap<>();
-        message.put("sender", username);
-        message.put("text", text.trim());
-        message.put("time", Instant.now().toString());
-        MESSAGES.add(message);
-        while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
-        send(exchange, 201, "{\"ok\":true}", "application/json; charset=utf-8");
+        try {
+            dependencies.saveMessage(username, text.trim());
+            send(exchange, 201, "{\"ok\":true}", "application/json; charset=utf-8");
+        } catch (SQLException ex) {
+            send(exchange, 500, "{\"error\":\"Could not save message\"}", "application/json; charset=utf-8");
+        }
     }
 
     private static String extractText(String json) {
@@ -217,11 +219,11 @@ public final class TlcServer {
         return text;
     }
 
-    private static String messagesJson() {
+    private static String messagesJson(List<Map<String, String>> messages) {
         StringBuilder json = new StringBuilder("{\"messages\":[");
-        for (int i = 0; i < MESSAGES.size(); i++) {
+        for (int i = 0; i < messages.size(); i++) {
             if (i > 0) json.append(',');
-            Map<String, String> message = MESSAGES.get(i);
+            Map<String, String> message = messages.get(i);
             json.append("{\"sender\":\"").append(escapeJsonString(message.get("sender")))
                     .append("\",\"text\":\"").append(escapeJsonString(message.get("text")))
                     .append("\",\"time\":\"").append(escapeJsonString(message.get("time"))).append("\"}");
