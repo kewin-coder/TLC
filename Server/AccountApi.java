@@ -44,13 +44,24 @@ public final class AccountApi {
 
     private void register(HttpExchange e) throws IOException {
         if (!method(e, "POST")) return;
-        Map<String, String> fields = fields(readBody(e));
+        Map<String, String> fields;
+        try { fields = fields(readBody(e)); }
+        catch (IOException ex) { send(e, 413, "{\"error\":\"Request too large or unreadable\"}"); return; }
         String username = fields.get("username"), password = fields.get("password");
         if (username == null || password == null) { send(e, 400, "{\"error\":\"username and password required\"}"); return; }
         char[] secret = password.toCharArray();
+        boolean accountCreated = false;
         try {
             if (!accounts.register(username, secret)) { send(e, 409, "{\"error\":\"Username unavailable\"}"); return; }
-            access.addPending(username);
+            accountCreated = true;
+            try {
+                access.addPending(username);
+            } catch (Exception approvalFailure) {
+                try { accounts.deleteUnapproved(username); }
+                catch (Exception rollbackFailure) { approvalFailure.addSuppressed(rollbackFailure); }
+                accountCreated = false;
+                throw approvalFailure;
+            }
             send(e, 201, "{\"status\":\"PENDING\"}");
         } catch (IllegalArgumentException ex) { send(e, 400, "{\"error\":\"Invalid registration details\"}"); }
         catch (Exception ex) { send(e, 500, "{\"error\":\"Account creation failed\"}"); }
@@ -59,7 +70,9 @@ public final class AccountApi {
 
     private void login(HttpExchange e) throws IOException {
         if (!method(e, "POST")) return;
-        Map<String, String> fields = fields(readBody(e));
+        Map<String, String> fields;
+        try { fields = fields(readBody(e)); }
+        catch (IOException ex) { send(e, 413, "{\"error\":\"Request too large or unreadable\"}"); return; }
         String username = fields.get("username"), password = fields.get("password");
         if (username == null || password == null) { send(e, 400, "{\"error\":\"Credentials required\"}"); return; }
         char[] passwordChars = password.toCharArray();
@@ -103,7 +116,9 @@ public final class AccountApi {
     private void setStatus(HttpExchange e) throws IOException {
         if (!method(e, "POST")) return;
         if (!owner(e)) { send(e, 403, "{\"error\":\"Owner access required\"}"); return; }
-        Map<String, String> fields = fields(readBody(e));
+        Map<String, String> fields;
+        try { fields = fields(readBody(e)); }
+        catch (IOException ex) { send(e, 413, "{\"error\":\"Request too large or unreadable\"}"); return; }
         try {
             String username = fields.get("username"), value = fields.get("status");
             if (username == null || value == null) throw new IllegalArgumentException();
