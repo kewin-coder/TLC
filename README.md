@@ -15,15 +15,24 @@ A local-first communication project built with Java and a lightweight browser cl
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/status` | `GET` | Basic server health/version (public) |
-| `/api/register` | `POST` | Create an account in pending state |
-| `/api/login` | `POST` | Verify credentials; approved users receive a session |
+| `/api/register` | `POST` | Create an account in pending state; JSON `{ "username", "password" }` |
+| `/api/login` | `POST` | Verify credentials; approved users receive a session cookie |
 | `/api/logout` | `POST` | Clear the current session |
 | `/api/account/me` | `GET` | Return the current approved account |
-| `/api/admin/pending` | `GET` | Owner-only pending account list |
-| `/api/admin/status` | `POST` | Owner-only account status change |
-| `/api/messages` | `GET`, `POST` | Read/send messages; requires an approved session |
+| `/api/admin/pending` | `GET` | Owner-only pending account list; requires `X-TLC-Admin-Secret` |
+| `/api/admin/status` | `POST` | Owner-only status change; JSON `{ "username", "status" }` |
+| `/api/messages` | `GET`, `POST` | Read/send messages; requires an approved session. POST JSON is `{ "text" }`; sender is taken from the session. |
 
-A pending login returns the machine-readable status `AWAITING_SYSADMIN_APPROVAL` and does not create a chat session. Message reads and writes are gated by the account approval check. Account status changes away from approved are intended to revoke that account's active sessions.
+A pending login returns `AWAITING_SYSADMIN_APPROVAL` and does not create a chat session. Message reads and writes are gated by account approval. Status changes away from approved invalidate matching in-memory sessions.
+
+## Browser client
+
+- `Client/index.html` connects to the status, account, and message routes.
+- `Client/account.html` supports registration, login, session check, and logout.
+- `Client/admin.html` calls the owner-only approval routes. The owner secret is entered at runtime and is not embedded in the page.
+- `Client/profile.html` checks the signed-in session. Profile editing and server-side profile storage are not implemented yet.
+
+Serve the client from the same origin as the Java server for the simplest setup. If hosted separately, configure the exact trusted origin using `TLC_ALLOWED_ORIGIN` and ensure the browser is using the correct server origin; the client currently uses relative API paths and therefore expects same-origin hosting or a reverse proxy.
 
 ## Requirements
 
@@ -65,5 +74,5 @@ This is a development prototype, not a hardened public service. In particular:
 2. Add automated tests for registration, pending/approved/rejected login, and access revocation.
 3. Replace owner-secret-per-request access with a protected owner session and rate limiting.
 4. Add secure, persistent session management and HTTPS deployment guidance.
-5. Integrate the browser client with registration, login, logout, and pending approval states.
-6. Continue with profiles, privacy controls, friends/groups, and notifications.
+5. Implement server-side profiles and privacy controls, then friends/groups and notifications.
+6. Harden registration so account creation and pending approval are atomic.
