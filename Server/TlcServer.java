@@ -5,6 +5,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,12 +16,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** HTTP entry point for TLC. Chat endpoints require an approved account session. */
+/** HTTP entry point for TLC. Serves the client and account-gated API from one origin. */
 public final class TlcServer {
     private static final int PORT = readPort();
     private static final int MAX_BODY_BYTES = 4096;
     private static final int MAX_MESSAGE_CHARS = 1000;
     private static final int MAX_MESSAGES = 500;
+    private static final Path CLIENT_ROOT = Paths.get(System.getenv().getOrDefault("TLC_CLIENT_DIR", "Client")).toAbsolutePath().normalize();
     private static final List<Map<String, String>> MESSAGES = new CopyOnWriteArrayList<>();
     private static final Pattern JSON_FIELD = Pattern.compile(
             "\\\"(sender|text)\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"");
@@ -57,17 +61,60 @@ public final class TlcServer {
                     "application/json; charset=utf-8");
         });
         server.createContext("/api/messages", TlcServer::handleMessages);
-        server.createContext("/", exchange -> {
-            cors(exchange);
-            if (preflight(exchange)) return;
-            if (!method(exchange, "GET")) return;
-            send(exchange, 200, "TLC server is running. Use /api/status and /api/messages.",
-                    "text/plain; charset=utf-8");
-        });
+        server.createContext("/", TlcServer::serveClient);
 
         server.setExecutor(null);
         server.start();
-        System.out.println("TLC listening on port " + PORT + " (approved accounts required for chat)");
+        System.out.println("TLC listening on port " + PORT + " (client + approved-account API; client root " + CLIENT_ROOT + ")");
+    }
+
+    /** Serve only files inside Client/, preventing traversal and keeping API paths separate. */
+    private static void serveClient(HttpExchange exchange) throws IOException {
+        cors(exchange);
+        if (preflight(exchange)) return;
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod()) && !"HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.getResponseHeaders().set("Allow", "GET, HEAD, OPTIONS");
+            send(exchange, 405, "Method not allowed", "text/plain; charset=utf-8");
+            return;
+        }
+        String rawPath = exchange.getRequestURI().getPath();
+        if (rawPath == null || rawPath.equals("/")) rawPath = "/index.html";
+        String relative = rawPath.startsWith("/") ? rawPath.substring(1) : rawPath;
+        Path file = CLIENT_ROOT.resolve(relative).normalize();
+        if (!file.startsWith(CLIENT_ROOT) || !Files.isRegularFile(file)) {
+            send(exchange, 404, "Not found", "text/plain; charset=utf-8");
+            return;
+        }
+        String type = contentType(file);
+        byte[] bytes;
+        try { bytes = Files.readAllBytes(file); }
+        catch (IOException ex) { send(exchange, 500, "Unable to read client file", "text/plain; charset=utf-8"); return; }
+        exchange.getResponseHeaders().set("Content-Type", type);
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
+        exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
+        if ("HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        } else {
+            exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) { output.write(bytes); }
+        }
+    }
+
+    private static String contentType(Path file) {
+        String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".html")) return "text/html; charset=utf-8";
+        if (name.endsWith(".css")) return "text/css; charset=utf-8";
+        if (name.endsWith(".js")) return "text/javascript; charset=utf-8";
+        if (name.endsWith(".json")) return "application/json; charset=utf-8";
+        if (name.endsWith(".svg")) return "image/svg+xml";
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".webp")) return "image/webp";
+        if (name.endsWith(".ico")) return "image/x-icon";
+        return "application/octet-stream";
     }
 
     private static void cors(HttpExchange exchange) {
@@ -77,14 +124,14 @@ public final class TlcServer {
             exchange.getResponseHeaders().set("Access-Control-Allow-Origin", allowedOrigin);
             exchange.getResponseHeaders().set("Access-Control-Allow-Credentials", "true");
         }
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, HEAD, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
         exchange.getResponseHeaders().set("Vary", "Origin");
     }
 
     private static boolean preflight(HttpExchange exchange) throws IOException {
         if (!"OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) return false;
-        exchange.getResponseHeaders().set("Allow", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().set("Allow", "GET, POST, HEAD, OPTIONS");
         exchange.sendResponseHeaders(204, -1);
         exchange.close();
         return true;
