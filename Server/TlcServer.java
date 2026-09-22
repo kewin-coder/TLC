@@ -82,13 +82,13 @@ public final class TlcServer {
         String relative = rawPath.startsWith("/") ? rawPath.substring(1) : rawPath;
         Path file = CLIENT_ROOT.resolve(relative).normalize();
         if (!file.startsWith(CLIENT_ROOT) || !Files.isRegularFile(file)) {
-            send(exchange, 404, "Not found", "text/plain; charset=utf-8");
+            serveErrorPage(exchange, 404, "404.html", "Not found");
             return;
         }
         String type = contentType(file);
         byte[] bytes;
         try { bytes = Files.readAllBytes(file); }
-        catch (IOException ex) { send(exchange, 500, "Unable to read client file", "text/plain; charset=utf-8"); return; }
+        catch (IOException ex) { serveErrorPage(exchange, 500, "500.html", "Unable to read client file"); return; }
         exchange.getResponseHeaders().set("Content-Type", type);
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
@@ -99,6 +99,32 @@ public final class TlcServer {
             exchange.close();
         } else {
             exchange.sendResponseHeaders(200, bytes.length);
+            try (OutputStream output = exchange.getResponseBody()) { output.write(bytes); }
+        }
+    }
+
+    /** Serve a styled error page when present; retain a plain-text fallback if it is missing. */
+    private static void serveErrorPage(HttpExchange exchange, int status, String pageName, String fallback) throws IOException {
+        Path page = CLIENT_ROOT.resolve(pageName).normalize();
+        byte[] bytes;
+        String type;
+        if (page.startsWith(CLIENT_ROOT) && Files.isRegularFile(page)) {
+            try { bytes = Files.readAllBytes(page); type = "text/html; charset=utf-8"; }
+            catch (IOException ex) { bytes = fallback.getBytes(StandardCharsets.UTF_8); type = "text/plain; charset=utf-8"; }
+        } else {
+            bytes = fallback.getBytes(StandardCharsets.UTF_8);
+            type = "text/plain; charset=utf-8";
+        }
+        exchange.getResponseHeaders().set("Content-Type", type);
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
+        exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
+        if ("HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(status, -1);
+            exchange.close();
+        } else {
+            exchange.sendResponseHeaders(status, bytes.length);
             try (OutputStream output = exchange.getResponseBody()) { output.write(bytes); }
         }
     }
@@ -208,7 +234,7 @@ public final class TlcServer {
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
             switch (ch) {
-                case '"': escaped.append("\\\""); break;
+                case '\"': escaped.append("\\\""); break;
                 case '\\': escaped.append("\\\\"); break;
                 case '\b': escaped.append("\\b"); break;
                 case '\f': escaped.append("\\f"); break;
@@ -228,7 +254,7 @@ public final class TlcServer {
             if (ch != '\\' || i + 1 >= value.length()) { decoded.append(ch); continue; }
             char escaped = value.charAt(++i);
             switch (escaped) {
-                case '"': decoded.append('"'); break;
+                case '\"': decoded.append('\"'); break;
                 case '\\': decoded.append('\\'); break;
                 case '/': decoded.append('/'); break;
                 case 'b': decoded.append('\b'); break;
