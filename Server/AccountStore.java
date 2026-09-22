@@ -45,6 +45,16 @@ public final class AccountStore implements AutoCloseable {
         }
     }
 
+    /** Removes a just-created account if its approval record could not be created. */
+    public synchronized void deleteUnapproved(String username) throws SQLException {
+        if (username == null || !username.matches("[A-Za-z0-9_]{3,24}")) return;
+        try (PreparedStatement p = connection.prepareStatement(
+                "DELETE FROM accounts WHERE username=?")) {
+            p.setString(1, username);
+            p.executeUpdate();
+        }
+    }
+
     public synchronized boolean verify(String username, char[] password)
             throws SQLException, GeneralSecurityException {
         if (username == null || password == null) return false;
