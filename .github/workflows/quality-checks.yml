@@ -1,0 +1,53 @@
+name: TLC quality checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Compile all server Java sources
+        working-directory: Server
+        run: javac -Xlint:all *.java
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Check inline JavaScript syntax in HTML pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in index.html Client/*.html; do
+            node - "$file" <<'NODE'
+          const fs = require('fs');
+          const vm = require('vm');
+          const file = process.argv[2];
+          const html = fs.readFileSync(file, 'utf8');
+          const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)];
+          for (const [index, match] of scripts.entries()) {
+            const source = match[1].trim();
+            if (!source) continue;
+            new vm.Script(source, { filename: `${file} inline script ${index + 1}` });
+          }
+          console.log(`Syntax OK: ${file}`);
+          NODE
+          done
