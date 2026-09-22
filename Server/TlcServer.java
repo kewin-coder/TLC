@@ -53,7 +53,7 @@ public final class TlcServer {
             e.getResponseHeaders().set("Access-Control-Allow-Credentials", "true");
         }
         e.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        e.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type, X-TLC-Admin-Secret");
+        e.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
         e.getResponseHeaders().set("Vary", "Origin");
     }
 
@@ -71,9 +71,15 @@ public final class TlcServer {
     }
 
     private static void messages(HttpExchange e) throws IOException {
-        cors(e); if (preflight(e)) return;
+        cors(e);
+        if (preflight(e)) return;
+        String requestMethod = e.getRequestMethod();
+        if (!"GET".equalsIgnoreCase(requestMethod) && !"POST".equalsIgnoreCase(requestMethod)) {
+            method(e, "GET or POST");
+            return;
+        }
         if (accountApi == null || !accountApi.requireApproved(e)) return;
-        if ("GET".equalsIgnoreCase(e.getRequestMethod())) {
+        if ("GET".equalsIgnoreCase(requestMethod)) {
             StringBuilder out = new StringBuilder("{\"messages\":[");
             for (int i = 0; i < MESSAGES.size(); i++) {
                 if (i > 0) out.append(',');
@@ -86,26 +92,27 @@ public final class TlcServer {
             send(e, 200, out.toString(), "application/json; charset=utf-8");
             return;
         }
-        if (!"POST".equalsIgnoreCase(e.getRequestMethod())) { method(e, "GET or POST"); return; }
         byte[] body = e.getRequestBody().readNBytes(MAX_BODY + 1);
-        if (body.length > MAX_BODY) { send(e, 413, "{\"error\":\"Message too large\"}", "application/json; charset=utf-8"); return; }
-        String json = new String(body, StandardCharsets.UTF_8);
-        Matcher matcher = FIELD.matcher(json);
-        String sender = null, text = null;
-        while (matcher.find()) {
-            String value = unescape(matcher.group(2));
-            if ("sender".equals(matcher.group(1))) sender = value;
-            else text = value;
-        }
-        if (sender == null || text == null || sender.trim().isEmpty() || text.trim().isEmpty()
-                || sender.length() > 40 || text.length() > 1000) {
-            send(e, 400, "{\"error\":\"Provide sender (1-40 chars) and text (1-1000 chars)\"}", "application/json; charset=utf-8");
+        if (body.length > MAX_BODY) {
+            send(e, 413, "{\"error\":\"Message too large\"}", "application/json; charset=utf-8");
             return;
         }
-        // Sender remains client-provided in this prototype; the authenticated account
-        // gate prevents anonymous access, but identity binding is a separate follow-up.
+        String json = new String(body, StandardCharsets.UTF_8);
+        Matcher matcher = FIELD.matcher(json);
+        String text = null;
+        while (matcher.find()) {
+            if ("text".equals(matcher.group(1))) text = unescape(matcher.group(2));
+        }
+        if (text == null || text.trim().isEmpty() || text.length() > 1000) {
+            send(e, 400, "{\"error\":\"Provide text (1-1000 chars)\"}", "application/json; charset=utf-8");
+            return;
+        }
+        // Never trust the browser's sender field. AccountApi currently exposes only
+        // an approval gate, so use a neutral label until session identity is exposed.
         Map<String,String> m = new LinkedHashMap<>();
-        m.put("sender", sender.trim()); m.put("text", text.trim()); m.put("time", Instant.now().toString());
+        m.put("sender", "Approved member");
+        m.put("text", text.trim());
+        m.put("time", Instant.now().toString());
         MESSAGES.add(m);
         while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
         send(e, 201, "{\"ok\":true}", "application/json; charset=utf-8");
