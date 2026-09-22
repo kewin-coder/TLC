@@ -6,7 +6,6 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -101,7 +100,6 @@ public final class TlcServer {
     private static void handleMessages(HttpExchange exchange) throws IOException {
         cors(exchange);
         if (preflight(exchange)) return;
-
         String requestMethod = exchange.getRequestMethod();
         boolean reading = "GET".equalsIgnoreCase(requestMethod);
         boolean posting = "POST".equalsIgnoreCase(requestMethod);
@@ -110,44 +108,39 @@ public final class TlcServer {
             send(exchange, 405, "{\"error\":\"Method not allowed\"}", "application/json; charset=utf-8");
             return;
         }
-        if (accountApi == null || !accountApi.requireApproved(exchange)) return;
-
+        if (accountApi == null) {
+            send(exchange, 503, "{\"error\":\"Account service unavailable\"}", "application/json; charset=utf-8");
+            return;
+        }
+        String username = accountApi.approvedUsername(exchange);
+        if (username == null) return;
         if (reading) {
             send(exchange, 200, messagesJson(), "application/json; charset=utf-8");
             return;
         }
-
         byte[] body = exchange.getRequestBody().readNBytes(MAX_BODY_BYTES + 1);
         if (body.length > MAX_BODY_BYTES) {
             send(exchange, 413, "{\"error\":\"Message too large\"}", "application/json; charset=utf-8");
             return;
         }
-
         String text = extractText(new String(body, StandardCharsets.UTF_8));
         if (text == null || text.trim().isEmpty() || text.length() > MAX_MESSAGE_CHARS) {
-            send(exchange, 400, "{\"error\":\"Provide text (1-1000 characters)\"}",
-                    "application/json; charset=utf-8");
+            send(exchange, 400, "{\"error\":\"Provide text (1-1000 characters)\"}", "application/json; charset=utf-8");
             return;
         }
-
         Map<String, String> message = new LinkedHashMap<>();
-        // Sender is intentionally not taken from request data; bind it to the
-        // authenticated session when AccountApi exposes that method.
-        message.put("sender", "Approved member");
+        message.put("sender", username);
         message.put("text", text.trim());
         message.put("time", Instant.now().toString());
         MESSAGES.add(message);
         while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
-
         send(exchange, 201, "{\"ok\":true}", "application/json; charset=utf-8");
     }
 
     private static String extractText(String json) {
         Matcher matcher = JSON_FIELD.matcher(json);
         String text = null;
-        while (matcher.find()) {
-            if ("text".equals(matcher.group(1))) text = unescapeJsonString(matcher.group(2));
-        }
+        while (matcher.find()) if ("text".equals(matcher.group(1))) text = unescapeJsonString(matcher.group(2));
         return text;
     }
 
@@ -158,8 +151,7 @@ public final class TlcServer {
             Map<String, String> message = MESSAGES.get(i);
             json.append("{\"sender\":\"").append(escapeJsonString(message.get("sender")))
                     .append("\",\"text\":\"").append(escapeJsonString(message.get("text")))
-                    .append("\",\"time\":\"").append(escapeJsonString(message.get("time")))
-                    .append("\"}");
+                    .append("\",\"time\":\"").append(escapeJsonString(message.get("time"))).append("\"}");
         }
         return json.append("]}").toString();
     }
@@ -176,9 +168,7 @@ public final class TlcServer {
                 case '\n': escaped.append("\\n"); break;
                 case '\r': escaped.append("\\r"); break;
                 case '\t': escaped.append("\\t"); break;
-                default:
-                    if (ch < 0x20) escaped.append(String.format("\\u%04x", (int) ch));
-                    else escaped.append(ch);
+                default: if (ch < 0x20) escaped.append(String.format("\\u%04x", (int) ch)); else escaped.append(ch);
             }
         }
         return escaped.toString();
@@ -188,10 +178,7 @@ public final class TlcServer {
         StringBuilder decoded = new StringBuilder(value.length());
         for (int i = 0; i < value.length(); i++) {
             char ch = value.charAt(i);
-            if (ch != '\\' || i + 1 >= value.length()) {
-                decoded.append(ch);
-                continue;
-            }
+            if (ch != '\\' || i + 1 >= value.length()) { decoded.append(ch); continue; }
             char escaped = value.charAt(++i);
             switch (escaped) {
                 case '"': decoded.append('"'); break;
@@ -204,12 +191,8 @@ public final class TlcServer {
                 case 't': decoded.append('\t'); break;
                 case 'u':
                     if (i + 4 < value.length()) {
-                        try {
-                            decoded.append((char) Integer.parseInt(value.substring(i + 1, i + 5), 16));
-                            i += 4;
-                        } catch (NumberFormatException ex) {
-                            decoded.append('u');
-                        }
+                        try { decoded.append((char) Integer.parseInt(value.substring(i + 1, i + 5), 16)); i += 4; }
+                        catch (NumberFormatException ex) { decoded.append('u'); }
                     } else decoded.append('u');
                     break;
                 default: decoded.append(escaped);
@@ -218,8 +201,7 @@ public final class TlcServer {
         return decoded.toString();
     }
 
-    private static void send(HttpExchange exchange, int status, String body, String contentType)
-            throws IOException {
+    private static void send(HttpExchange exchange, int status, String body, String contentType) throws IOException {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", contentType);
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
@@ -227,8 +209,6 @@ public final class TlcServer {
         exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
         exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
         exchange.sendResponseHeaders(status, bytes.length);
-        try (OutputStream output = exchange.getResponseBody()) {
-            output.write(bytes);
-        }
+        try (OutputStream output = exchange.getResponseBody()) { output.write(bytes); }
     }
 }
