@@ -1,26 +1,45 @@
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import java.io.*;
+
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** TLC HTTP API. Chat access is gated by AccountApi approval checks. */
+/** HTTP entry point for TLC. Chat endpoints require an approved account session. */
 public final class TlcServer {
-    private static final int PORT = Integer.parseInt(System.getenv().getOrDefault("TLC_PORT", "8080"));
-    private static final int MAX_BODY = 4096;
+    private static final int PORT = readPort();
+    private static final int MAX_BODY_BYTES = 4096;
+    private static final int MAX_MESSAGE_CHARS = 1000;
     private static final int MAX_MESSAGES = 500;
-    private static final List<Map<String,String>> MESSAGES = new CopyOnWriteArrayList<>();
-    private static final Pattern FIELD = Pattern.compile("\\\"(sender|text)\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"");
+    private static final List<Map<String, String>> MESSAGES = new CopyOnWriteArrayList<>();
+    private static final Pattern JSON_FIELD = Pattern.compile(
+            "\\\"(sender|text)\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"");
+
     private static AccountApi accountApi;
-    private TlcServer() {}
+
+    private TlcServer() { }
+
+    private static int readPort() {
+        String value = System.getenv().getOrDefault("TLC_PORT", "8080");
+        try {
+            int port = Integer.parseInt(value);
+            if (port < 1 || port > 65535) throw new IllegalArgumentException();
+            return port;
+        } catch (IllegalArgumentException ex) {
+            throw new ExceptionInInitializerError("TLC_PORT must be an integer from 1 to 65535");
+        }
+    }
 
     public static void main(String[] args) throws IOException {
-        if (PORT < 1 || PORT > 65535) throw new IOException("TLC_PORT must be between 1 and 65535");
         HttpServer server = HttpServer.create(new InetSocketAddress(PORT), 0);
         String jdbcUrl = System.getenv().getOrDefault("TLC_DATABASE_URL", "jdbc:sqlite:tlc.db");
         try {
@@ -29,105 +48,187 @@ public final class TlcServer {
             server.stop(0);
             throw new IOException("TLC account services failed to initialize; refusing to start unprotected", ex);
         }
-        server.createContext("/api/status", e -> {
-            cors(e); if (preflight(e)) return;
-            if (!method(e, "GET")) return;
-            send(e, 200, "{\"status\":\"TLC Java connected\",\"version\":\"account-gated\"}", "application/json; charset=utf-8");
+
+        server.createContext("/api/status", exchange -> {
+            cors(exchange);
+            if (preflight(exchange)) return;
+            if (!method(exchange, "GET")) return;
+            send(exchange, 200,
+                    "{\"status\":\"TLC Java connected\",\"version\":\"account-gated\"}",
+                    "application/json; charset=utf-8");
         });
-        server.createContext("/api/messages", TlcServer::messages);
-        server.createContext("/", e -> {
-            cors(e); if (preflight(e)) return;
-            if (!method(e, "GET")) return;
-            send(e, 200, "TLC server is running. Use /api/status and /api/messages.", "text/plain; charset=utf-8");
+        server.createContext("/api/messages", TlcServer::handleMessages);
+        server.createContext("/", exchange -> {
+            cors(exchange);
+            if (preflight(exchange)) return;
+            if (!method(exchange, "GET")) return;
+            send(exchange, 200, "TLC server is running. Use /api/status and /api/messages.",
+                    "text/plain; charset=utf-8");
         });
+
         server.setExecutor(null);
         server.start();
         System.out.println("TLC listening on port " + PORT + " (approved accounts required for chat)");
     }
 
-    private static void cors(HttpExchange e) {
-        String allowed = System.getenv("TLC_ALLOWED_ORIGIN");
-        String origin = e.getRequestHeaders().getFirst("Origin");
-        if (allowed != null && !allowed.isBlank() && allowed.equals(origin)) {
-            e.getResponseHeaders().set("Access-Control-Allow-Origin", allowed);
-            e.getResponseHeaders().set("Access-Control-Allow-Credentials", "true");
+    private static void cors(HttpExchange exchange) {
+        String allowedOrigin = System.getenv("TLC_ALLOWED_ORIGIN");
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        if (allowedOrigin != null && !allowedOrigin.isBlank() && allowedOrigin.equals(origin)) {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", allowedOrigin);
+            exchange.getResponseHeaders().set("Access-Control-Allow-Credentials", "true");
         }
-        e.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        e.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
-        e.getResponseHeaders().set("Vary", "Origin");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+        exchange.getResponseHeaders().set("Vary", "Origin");
     }
 
-    private static boolean preflight(HttpExchange e) throws IOException {
-        if (!"OPTIONS".equalsIgnoreCase(e.getRequestMethod())) return false;
-        e.getResponseHeaders().set("Allow", "GET, POST, OPTIONS");
-        e.sendResponseHeaders(204, -1); e.close(); return true;
+    private static boolean preflight(HttpExchange exchange) throws IOException {
+        if (!"OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) return false;
+        exchange.getResponseHeaders().set("Allow", "GET, POST, OPTIONS");
+        exchange.sendResponseHeaders(204, -1);
+        exchange.close();
+        return true;
     }
 
-    private static boolean method(HttpExchange e, String expected) throws IOException {
-        if (expected.equalsIgnoreCase(e.getRequestMethod())) return true;
-        e.getResponseHeaders().set("Allow", expected + ", OPTIONS");
-        send(e, 405, "{\"error\":\"Method not allowed\"}", "application/json; charset=utf-8");
+    private static boolean method(HttpExchange exchange, String expected) throws IOException {
+        if (expected.equalsIgnoreCase(exchange.getRequestMethod())) return true;
+        exchange.getResponseHeaders().set("Allow", expected + ", OPTIONS");
+        send(exchange, 405, "{\"error\":\"Method not allowed\"}", "application/json; charset=utf-8");
         return false;
     }
 
-    private static void messages(HttpExchange e) throws IOException {
-        cors(e);
-        if (preflight(e)) return;
-        String requestMethod = e.getRequestMethod();
-        if (!"GET".equalsIgnoreCase(requestMethod) && !"POST".equalsIgnoreCase(requestMethod)) {
-            method(e, "GET or POST");
+    private static void handleMessages(HttpExchange exchange) throws IOException {
+        cors(exchange);
+        if (preflight(exchange)) return;
+
+        String requestMethod = exchange.getRequestMethod();
+        boolean reading = "GET".equalsIgnoreCase(requestMethod);
+        boolean posting = "POST".equalsIgnoreCase(requestMethod);
+        if (!reading && !posting) {
+            exchange.getResponseHeaders().set("Allow", "GET, POST, OPTIONS");
+            send(exchange, 405, "{\"error\":\"Method not allowed\"}", "application/json; charset=utf-8");
             return;
         }
-        if (accountApi == null || !accountApi.requireApproved(e)) return;
-        if ("GET".equalsIgnoreCase(requestMethod)) {
-            StringBuilder out = new StringBuilder("{\"messages\":[");
-            for (int i = 0; i < MESSAGES.size(); i++) {
-                if (i > 0) out.append(',');
-                Map<String,String> m = MESSAGES.get(i);
-                out.append("{\"sender\":\"").append(escape(m.get("sender")))
-                   .append("\",\"text\":\"").append(escape(m.get("text")))
-                   .append("\",\"time\":\"").append(escape(m.get("time"))).append("\"}");
-            }
-            out.append("]}");
-            send(e, 200, out.toString(), "application/json; charset=utf-8");
+        if (accountApi == null || !accountApi.requireApproved(exchange)) return;
+
+        if (reading) {
+            send(exchange, 200, messagesJson(), "application/json; charset=utf-8");
             return;
         }
-        byte[] body = e.getRequestBody().readNBytes(MAX_BODY + 1);
-        if (body.length > MAX_BODY) {
-            send(e, 413, "{\"error\":\"Message too large\"}", "application/json; charset=utf-8");
+
+        byte[] body = exchange.getRequestBody().readNBytes(MAX_BODY_BYTES + 1);
+        if (body.length > MAX_BODY_BYTES) {
+            send(exchange, 413, "{\"error\":\"Message too large\"}", "application/json; charset=utf-8");
             return;
         }
-        String json = new String(body, StandardCharsets.UTF_8);
-        Matcher matcher = FIELD.matcher(json);
-        String text = null;
-        while (matcher.find()) {
-            if ("text".equals(matcher.group(1))) text = unescape(matcher.group(2));
-        }
-        if (text == null || text.trim().isEmpty() || text.length() > 1000) {
-            send(e, 400, "{\"error\":\"Provide text (1-1000 chars)\"}", "application/json; charset=utf-8");
+
+        String text = extractText(new String(body, StandardCharsets.UTF_8));
+        if (text == null || text.trim().isEmpty() || text.length() > MAX_MESSAGE_CHARS) {
+            send(exchange, 400, "{\"error\":\"Provide text (1-1000 characters)\"}",
+                    "application/json; charset=utf-8");
             return;
         }
-        // Never trust the browser's sender field. AccountApi currently exposes only
-        // an approval gate, so use a neutral label until session identity is exposed.
-        Map<String,String> m = new LinkedHashMap<>();
-        m.put("sender", "Approved member");
-        m.put("text", text.trim());
-        m.put("time", Instant.now().toString());
-        MESSAGES.add(m);
+
+        Map<String, String> message = new LinkedHashMap<>();
+        // Sender is intentionally not taken from request data; bind it to the
+        // authenticated session when AccountApi exposes that method.
+        message.put("sender", "Approved member");
+        message.put("text", text.trim());
+        message.put("time", Instant.now().toString());
+        MESSAGES.add(message);
         while (MESSAGES.size() > MAX_MESSAGES) MESSAGES.remove(0);
-        send(e, 201, "{\"ok\":true}", "application/json; charset=utf-8");
+
+        send(exchange, 201, "{\"ok\":true}", "application/json; charset=utf-8");
     }
 
-    private static String escape(String s) { return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r"); }
-    private static String unescape(String s) { return s.replace("\\\"", "\"").replace("\\n", "\n").replace("\\r", "\r").replace("\\\\", "\\"); }
-    private static void send(HttpExchange e, int code, String body, String type) throws IOException {
-        byte[] b = body.getBytes(StandardCharsets.UTF_8);
-        e.getResponseHeaders().set("Content-Type", type);
-        e.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
-        e.getResponseHeaders().set("Cache-Control", "no-store");
-        e.getResponseHeaders().set("X-Frame-Options", "DENY");
-        e.getResponseHeaders().set("Referrer-Policy", "no-referrer");
-        e.sendResponseHeaders(code, b.length);
-        try (OutputStream o = e.getResponseBody()) { o.write(b); }
+    private static String extractText(String json) {
+        Matcher matcher = JSON_FIELD.matcher(json);
+        String text = null;
+        while (matcher.find()) {
+            if ("text".equals(matcher.group(1))) text = unescapeJsonString(matcher.group(2));
+        }
+        return text;
+    }
+
+    private static String messagesJson() {
+        StringBuilder json = new StringBuilder("{\"messages\":[");
+        for (int i = 0; i < MESSAGES.size(); i++) {
+            if (i > 0) json.append(',');
+            Map<String, String> message = MESSAGES.get(i);
+            json.append("{\"sender\":\"").append(escapeJsonString(message.get("sender")))
+                    .append("\",\"text\":\"").append(escapeJsonString(message.get("text")))
+                    .append("\",\"time\":\"").append(escapeJsonString(message.get("time")))
+                    .append("\"}");
+        }
+        return json.append("]}").toString();
+    }
+
+    private static String escapeJsonString(String value) {
+        StringBuilder escaped = new StringBuilder(value.length() + 16);
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '"': escaped.append("\\\""); break;
+                case '\\': escaped.append("\\\\"); break;
+                case '\b': escaped.append("\\b"); break;
+                case '\f': escaped.append("\\f"); break;
+                case '\n': escaped.append("\\n"); break;
+                case '\r': escaped.append("\\r"); break;
+                case '\t': escaped.append("\\t"); break;
+                default:
+                    if (ch < 0x20) escaped.append(String.format("\\u%04x", (int) ch));
+                    else escaped.append(ch);
+            }
+        }
+        return escaped.toString();
+    }
+
+    private static String unescapeJsonString(String value) {
+        StringBuilder decoded = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch != '\\' || i + 1 >= value.length()) {
+                decoded.append(ch);
+                continue;
+            }
+            char escaped = value.charAt(++i);
+            switch (escaped) {
+                case '"': decoded.append('"'); break;
+                case '\\': decoded.append('\\'); break;
+                case '/': decoded.append('/'); break;
+                case 'b': decoded.append('\b'); break;
+                case 'f': decoded.append('\f'); break;
+                case 'n': decoded.append('\n'); break;
+                case 'r': decoded.append('\r'); break;
+                case 't': decoded.append('\t'); break;
+                case 'u':
+                    if (i + 4 < value.length()) {
+                        try {
+                            decoded.append((char) Integer.parseInt(value.substring(i + 1, i + 5), 16));
+                            i += 4;
+                        } catch (NumberFormatException ex) {
+                            decoded.append('u');
+                        }
+                    } else decoded.append('u');
+                    break;
+                default: decoded.append(escaped);
+            }
+        }
+        return decoded.toString();
+    }
+
+    private static void send(HttpExchange exchange, int status, String body, String contentType)
+            throws IOException {
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", contentType);
+        exchange.getResponseHeaders().set("Cache-Control", "no-store");
+        exchange.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+        exchange.getResponseHeaders().set("X-Frame-Options", "DENY");
+        exchange.getResponseHeaders().set("Referrer-Policy", "no-referrer");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(bytes);
+        }
     }
 }
