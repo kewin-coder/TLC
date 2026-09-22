@@ -86,3 +86,21 @@ This is a development prototype, not a hardened public service. In particular:
 4. Add secure, persistent session management and HTTPS deployment guidance.
 5. Implement server-side profiles and privacy controls, then friends/groups and notifications.
 6. Harden registration so account creation and pending approval are atomic.
+
+## Update log
+
+> New development updates are appended here. This log records changes made through the connected GitHub workflow; it does not imply that browser or end-to-end tests were run.
+
+### 2026-09-22 — Frontend navigation and page polish
+
+- **Chat page** — responsive desktop sidebar and mobile bottom navigation, active Chat indicator, responsive layout improvements, clearer chat status, and some authentication busy-state handling.
+  - Commit: [`1328b9c`](https://github.com/kewin-coder/TLC/commit/1328b9cd5838150549ee0e4aa46e7d24fe3a65b8)
+- **Account page** — matching responsive navigation and dark styling, improved focus states, busy handling for session actions, tab switching disabled while busy, password clearing, and clearer status feedback.
+  - Commit: [`0396a78`](https://github.com/kewin-coder/TLC/commit/0396a789e7c8b216314fce489f2f713b8bf9ba96)
+- **Profile page** — responsive navigation, improved session/sign-out handling, and clearer errors. The page explicitly notes that profile editing and server-side profile storage are not implemented.
+  - Commit: [`345b9e7`](https://github.com/kewin-coder/TLC/commit/345b9e78370b326e8c4d2a1eb05e60ef216a2379)
+- **Admin page** — matching responsive navigation and improved focus/busy states; prevents overlapping approval operations while keeping the existing API routes.
+  - Commit: [`c2ac63c`](https://github.com/kewin-coder/TLC/commit/c2ac63c793bedec0a65f309787e59946fc101f64)
+- **README** — added this update log and linked the frontend commits.
+
+**Verification status:** Changes were committed to GitHub. No browser or end-to-end test was run as part of these updates.
