@@ -7,3 +7,13 @@ main{margin-left:210px;padding-bottom:56px}.hero{min-height:585px;padding:70px 4
 .about{display:grid;grid-template-columns:1.2fr 1fr .7fr;gap:35px;align-items:center;padding:38px 4%;border-top:1px solid var(--line);background:#041426}.about>div:first-child{padding:22px;border:1px solid var(--line);border-radius:10px;background:#06182b}.about p{color:#b7d4ee}.network{display:flex;justify-content:space-around;align-items:center;text-align:center;color:#a9c8e3}.network b{font-size:22px;color:var(--cyan);text-align:center}.network small{display:block;font-size:13px;color:var(--muted)}.slogan{text-align:center;color:var(--cyan);font-size:23px;font-style:italic}
 footer{position:fixed;bottom:0;left:0;right:0;min-height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 3%;background:#061426;border-top:1px solid var(--line);color:#9bb9d4;font-size:14px}footer span:last-child:first-letter{color:#2bd49a}
 @media(max-width:900px){.topbar{height:auto;min-height:78px;gap:10px;flex-wrap:wrap;padding:12px 18px}.brand strong{font-size:38px}.brand-name{font-size:11px}.topbar p{display:none}.sidebar{position:static;width:auto;bottom:auto;flex-direction:row;overflow:auto;padding:8px;border-right:0;border-bottom:1px solid var(--line)}.sidebar a{white-space:nowrap;font-size:15px;padding:9px 12px}main{margin:0}.hero{grid-template-columns:1fr;padding:36px 20px}.features{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:28px}.features article{border-right:0;border-bottom:1px solid var(--line);padding-bottom:12px}.about{grid-template-columns:1fr;padding:24px 20px}.network{min-height:100px}footer{position:static;gap:12px;padding:12px 18px}}
+
+/* Desktop: keep the sidebar in its own grid column, aligned beneath the header.
+   The page scrolls as one document; the sidebar stays pinned within its content row. */
+@media(min-width:901px){
+  body{display:grid;grid-template-columns:210px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;min-height:100vh;overflow-x:hidden}
+  .topbar{grid-column:1 / -1;grid-row:1;min-width:0}
+  .sidebar{grid-column:1;grid-row:2;position:sticky;top:0;align-self:start;width:210px;height:calc(100vh - 56px);min-height:360px;bottom:auto;overflow-y:auto;overscroll-behavior:contain}
+  main{grid-column:2;grid-row:2;margin-left:0;min-width:0;padding-bottom:0}
+  footer{grid-column:1 / -1;grid-row:3;position:static;min-width:0}
+}
