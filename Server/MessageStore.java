@@ -10,15 +10,17 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Stores TLC messages in the same configured database as account data. */
+/** Stores encrypted TLC messages in the same configured database as account data. */
 public final class MessageStore {
     private final String jdbcUrl;
+    private final TlcCrypto crypto;
 
     public MessageStore(String jdbcUrl) throws SQLException {
         if (jdbcUrl == null || jdbcUrl.isBlank()) {
             throw new IllegalArgumentException("jdbcUrl must not be blank");
         }
         this.jdbcUrl = jdbcUrl;
+        this.crypto = new TlcCrypto();
         try (Connection connection = open(); Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "CREATE TABLE IF NOT EXISTS messages (" +
@@ -48,13 +50,15 @@ public final class MessageStore {
             throw new IllegalArgumentException("maxMessages must be at least 1");
         }
 
+        String encryptedText = crypto.encrypt(text);
+
         try (Connection connection = open()) {
             connection.setAutoCommit(false);
             try {
                 try (PreparedStatement insert = connection.prepareStatement(
                         "INSERT INTO messages(sender, text, sent_at) VALUES(?, ?, ?)")) {
                     insert.setString(1, sender);
-                    insert.setString(2, text);
+                    insert.setString(2, encryptedText);
                     insert.setString(3, sentAt);
                     insert.executeUpdate();
                 }
@@ -90,7 +94,7 @@ public final class MessageStore {
                 while (rows.next()) {
                     Map<String, String> message = new LinkedHashMap<>();
                     message.put("sender", rows.getString("sender"));
-                    message.put("text", rows.getString("text"));
+                    message.put("text", crypto.decrypt(rows.getString("text")));
                     message.put("time", rows.getString("sent_at"));
                     messages.add(message);
                 }
