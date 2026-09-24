@@ -150,8 +150,8 @@ public final class TlcBackup {
                     tempKey, StandardCharsets.US_ASCII).trim();
             validateKey(encodedKey);
 
-            Files.move(tempDatabase, database, StandardCopyOption.ATOMIC_MOVE);
-            Files.move(tempKey, key, StandardCopyOption.ATOMIC_MOVE);
+            moveIntoPlace(tempDatabase, database);
+            moveIntoPlace(tempKey, key);
         } finally {
             deleteIfExists(tempDatabase);
             deleteIfExists(tempKey);
@@ -184,6 +184,14 @@ public final class TlcBackup {
         }
 
         return Paths.get(location).toAbsolutePath().normalize();
+    }
+
+    private static void moveIntoPlace(Path source, Path destination) throws IOException {
+        try {
+            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+        } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+            Files.move(source, destination);
+        }
     }
 
     private static void validateKey(String encoded) {
