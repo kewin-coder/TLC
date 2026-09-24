@@ -50,12 +50,13 @@ TLC message text is encrypted at rest with AES-256-GCM before it is written to S
 
 The installation encryption key is persistent:
 
-1. If `TLC_ENCRYPTION_KEY` exists, TLC validates it and preserves it for compatibility.
-2. Otherwise, a new random 256-bit key is generated on first use.
-3. The key is stored outside `Client/`, by default at `tlc-data/encryption.key`.
-4. Normal application updates reuse the same key.
-5. A fresh installation without its old data creates a new key.
-6. Restoring the TLC backup restores the database and its matching key.
+1. If the persistent key file exists, TLC loads and validates it. This preserves the key across normal updates and restores.
+2. If no key file exists but `TLC_ENCRYPTION_KEY` is supplied, TLC validates it and persists it for compatibility.
+3. Otherwise, a new random 256-bit key is generated on first use.
+4. The key is stored outside `Client/`, by default at `tlc-data/encryption.key`.
+5. Normal application updates reuse the same key.
+6. A fresh installation without its old data creates a new key.
+7. Restoring the TLC backup restores the database and its matching key.
 
 Never commit `tlc-data/encryption.key` or any real encryption key to GitHub.
 
@@ -132,6 +133,11 @@ This is a development prototype, not a hardened public service. In particular:
 - CORS is not authentication. Keep the service on a trusted LAN and avoid public exposure.
 - Backups contain the encryption key and therefore must be treated as sensitive data.
 - Have a trusted adult or experienced developer review deployment and account/security changes before real users depend on TLC.
+
+## Security files
+
+- `.gitignore` blocks TLC runtime databases, encryption keys, backups, build output, and signing material from normal commits.
+- `SECURITY.md` documents the current threat model and deployment rules.
 
 ## Development priorities
 
