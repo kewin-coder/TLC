@@ -19,7 +19,7 @@ public final class TlcServer {
     private static final int PORT = readPort();
     private static final int MAX_BODY_BYTES = 4096;
     private static final int MAX_MESSAGE_CHARS = 1000;
-    private static final int MAX_MESSAGES = 500;
+    private static final int HISTORY_PAGE_SIZE = 50;
     private static final Path CLIENT_ROOT = Paths.get(
             System.getenv().getOrDefault("TLC_CLIENT_DIR", "Client"))
             .toAbsolutePath()
@@ -28,7 +28,7 @@ public final class TlcServer {
             "\\\"(sender|text)\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"");
 
     private static AccountApi accountApi;
-    private static ServerDependencies1 dependencies;
+    private static ServerDependencies2 dependencies;
 
     private TlcServer() {
     }
@@ -54,7 +54,7 @@ public final class TlcServer {
 
         try {
             accountApi = new AccountApi(server, jdbcUrl);
-            dependencies = new ServerDependencies1(jdbcUrl, MAX_MESSAGES);
+            dependencies = new ServerDependencies2(jdbcUrl);
         } catch (Exception ex) {
             server.stop(0);
             throw new IOException(
@@ -288,7 +288,7 @@ public final class TlcServer {
         if (reading) {
             try {
                 send(exchange, 200,
-                        messagesJson(dependencies.latestMessages()),
+                        messagesJson(readMessagePage(exchange)),
                         "application/json; charset=utf-8");
             } catch (SQLException | IllegalStateException ex) {
                 send(exchange, 500,
@@ -327,6 +327,36 @@ public final class TlcServer {
         }
     }
 
+    private static List<Map<String, String>> readMessagePage(HttpExchange exchange)
+            throws SQLException {
+        String query = exchange.getRequestURI().getRawQuery();
+        long beforeId = parseBeforeId(query);
+        if (beforeId > 0) {
+            return dependencies.olderMessages(beforeId, HISTORY_PAGE_SIZE);
+        }
+        return dependencies.latestMessages(HISTORY_PAGE_SIZE);
+    }
+
+    private static long parseBeforeId(String query) {
+        if (query == null || query.isBlank()) {
+            return 0;
+        }
+
+        for (String part : query.split("&")) {
+            int equals = part.indexOf('=');
+            if (equals <= 0 || !"before".equals(part.substring(0, equals))) {
+                continue;
+            }
+            try {
+                long value = Long.parseLong(part.substring(equals + 1));
+                return value > 0 ? value : 0;
+            } catch (NumberFormatException ignored) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
     private static String extractText(String json) {
         Matcher matcher = JSON_FIELD.matcher(json);
         String text = null;
@@ -357,7 +387,7 @@ public final class TlcServer {
                     .append("\"}");
         }
 
-        return json.append("]}").toString();
+        return json.append("],\"pageSize\":").append(HISTORY_PAGE_SIZE).append("}").toString();
     }
 
     private static String escapeJsonString(String value) {
