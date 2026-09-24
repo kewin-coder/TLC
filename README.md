@@ -9,6 +9,7 @@ A local-first communication project built with Java and a lightweight browser cl
 - Account-first access: new accounts remain pending until an owner approves them.
 - Explicit configuration rather than secrets embedded in source code.
 - Internet access remains optional. Do not expose the server directly to the public internet.
+- Persistent per-installation encryption identity so normal TLC updates do not create a new message key.
 
 ## Same-origin integration
 
@@ -38,10 +39,61 @@ Pending login returns `AWAITING_SYSADMIN_APPROVAL` and does not create a chat se
 
 ## Client pages
 
-- `Client/index.html` — server health, sign-in/registration, chat send/read, and links to other pages.
+- `Client/index.html` — server health, sign-in/registration, encrypted persistent chat send/read, and links to other pages.
 - `Client/account.html` — registration, login, session check, and logout.
 - `Client/admin.html` — owner-only approval interface; the owner secret is entered at runtime and is not embedded in the page.
 - `Client/profile.html` — checks the signed-in session. Profile editing and server-side profile storage are not implemented yet.
+
+## Encryption and key lifecycle
+
+TLC message text is encrypted at rest with AES-256-GCM before it is written to SQLite. The server decrypts messages when an approved client requests them; this is **server-side encryption at rest, not end-to-end encryption**.
+
+The installation encryption key is persistent:
+
+1. If `TLC_ENCRYPTION_KEY` exists, TLC validates it and preserves it for compatibility.
+2. Otherwise, a new random 256-bit key is generated on first use.
+3. The key is stored outside `Client/`, by default at `tlc-data/encryption.key`.
+4. Normal application updates reuse the same key.
+5. A fresh installation without its old data creates a new key.
+6. Restoring the TLC backup restores the database and its matching key.
+
+Never commit `tlc-data/encryption.key` or any real encryption key to GitHub.
+
+## Manual TLC backup
+
+TLC now includes `Server/TlcBackup.java` for a single-file backup containing the SQLite database and the installation key.
+
+**Stop TLC before creating or restoring a backup.**
+
+Create:
+
+```text
+java TlcBackup backup TLC_Backup.tlcb
+```
+
+Restore into a fresh TLC data location:
+
+```text
+java TlcBackup restore TLC_Backup.tlcb
+```
+
+The restore code refuses to overwrite an existing database or key. Keep the `.tlcb` backup private because it contains the encryption key needed to decrypt the backed-up messages.
+
+The planned installer/update flow is:
+
+```text
+New TLC version detected
+        ↓
+⚠️ Please create a backup copy
+        ↓
+Create/confirm TLC_Backup.tlcb
+        ↓
+Continue update
+        ↓
+New version keeps the existing encryption key
+```
+
+The repository currently contains the backup engine, but the final OS/Android installer popup belongs in the installer/APK layer rather than the Java HTTP server. It should block the update until the user confirms that a backup was created or selects an existing backup.
 
 ## Requirements
 
@@ -56,6 +108,8 @@ Set these environment variables on the device running the server:
 - `TLC_PORT` — HTTP port; defaults to `8080`.
 - `TLC_DATABASE_URL` — JDBC URL; defaults to `jdbc:sqlite:tlc.db`.
 - `TLC_CLIENT_DIR` — client directory; defaults to `Client` relative to the process working directory.
+- `TLC_KEY_FILE` — optional persistent encryption-key path; defaults to `tlc-data/encryption.key`.
+- `TLC_ENCRYPTION_KEY` — optional existing Base64-encoded 256-bit key for compatibility. Do not commit it.
 - `TLC_ADMIN_SECRET` — private owner secret, at least 24 characters. Never commit it, embed it in client-side code, or share it in screenshots. Replace it if exposed.
 - `TLC_ALLOWED_ORIGIN` — optional exact CORS origin for separate-origin use; same-origin deployment does not need it.
 
@@ -76,31 +130,30 @@ This is a development prototype, not a hardened public service. In particular:
 - Owner-secret authentication needs stronger operational protection and rate limiting before public use.
 - The lightweight request-field parser is not a full JSON parser and must be replaced before relying on adversarial input.
 - CORS is not authentication. Keep the service on a trusted LAN and avoid public exposure.
+- Backups contain the encryption key and therefore must be treated as sensitive data.
 - Have a trusted adult or experienced developer review deployment and account/security changes before real users depend on TLC.
 
 ## Development priorities
 
 1. Replace ad-hoc JSON parsing with a maintained JSON library and consistent error handling.
-2. Add automated tests for registration, pending/approved/rejected login, and access revocation.
+2. Add automated tests for registration, pending/approved/rejected login, access revocation, encryption, and backup/restore.
 3. Replace owner-secret-per-request access with a protected owner session and rate limiting.
-4. Add secure, persistent session management and HTTPS deployment guidance.
-5. Implement server-side profiles and privacy controls, then friends/groups and notifications.
-6. Harden registration so account creation and pending approval are atomic.
+4. Replace the current manual backup command with the final installer/APK backup gate and restore flow.
+5. Add secure, persistent session management and HTTPS deployment guidance.
+6. Implement server-side profiles and privacy controls, then friends/groups and notifications.
+7. Harden registration so account creation and pending approval are atomic.
 
 ## Update log
 
-> New development updates are appended here. This log records changes made through the connected GitHub workflow; it does not imply that browser or end-to-end tests were run.
+> New development updates are appended here. This log records changes made through the connected GitHub workflow; it does not imply that browser, end-to-end, or device tests were run.
 
-### 2026-09-22 — Frontend navigation and page polish
+### 2026-09-24 — Persistent encryption identity and backup foundation
 
-- **Chat page** — responsive desktop sidebar and mobile bottom navigation, active Chat indicator, responsive layout improvements, clearer chat status, and some authentication busy-state handling.
-  - Commit: [`1328b9c`](https://github.com/kewin-coder/TLC/commit/1328b9cd5838150549ee0e4aa46e7d24fe3a65b8)
-- **Account page** — matching responsive navigation and dark styling, improved focus states, busy handling for session actions, tab switching disabled while busy, password clearing, and clearer status feedback.
-  - Commit: [`0396a78`](https://github.com/kewin-coder/TLC/commit/0396a789e7c8b216314fce489f2f713b8bf9ba96)
-- **Profile page** — responsive navigation, improved session/sign-out handling, and clearer errors. The page explicitly notes that profile editing and server-side profile storage are not implemented.
-  - Commit: [`345b9e7`](https://github.com/kewin-coder/TLC/commit/345b9e78370b326e8c4d2a1eb05e60ef216a2379)
-- **Admin page** — matching responsive navigation and improved focus/busy states; prevents overlapping approval operations while keeping the existing API routes.
-  - Commit: [`c2ac63c`](https://github.com/kewin-coder/TLC/commit/c2ac63c793bedec0a65f309787e59946fc101f64)
-- **README** — added this update log and linked the frontend commits.
+- Added `Server/TlcKeyStore.java` for per-installation persistent 256-bit key generation/storage.
+- Updated `Server/TlcCrypto.java` to use the persistent installation key while retaining compatibility with `TLC_ENCRYPTION_KEY`.
+- Added `Server/TlcBackup.java` for manual SQLite + encryption-key backup/restore using a `.tlcb` file.
+- Restore refuses to overwrite an existing database/key and validates the backup format/key.
+- Updated the chat UI so it no longer claims messages disappear on server restart; it now describes persistent encrypted storage.
+- Documented the planned installer/APK backup gate.
 
-**Verification status:** Changes were committed to GitHub. No browser or end-to-end test was run as part of these updates.
+**Verification status:** Changes were committed to GitHub. No Android build, Java `javac` build, browser test, or installer test was run as part of these updates.
