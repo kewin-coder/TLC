@@ -2,13 +2,11 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.util.Base64;
+import java.security.SecureRandom;
 
 /** AES-256-GCM encryption for TLC message data. */
 public final class TlcCrypto {
-    private static final String ENV_NAME = "TLC_ENCRYPTION_KEY";
-    private static final int KEY_BYTES = 32;
     private static final int IV_BYTES = 12;
     private static final int TAG_BITS = 128;
 
@@ -16,21 +14,7 @@ public final class TlcCrypto {
     private final SecureRandom random = new SecureRandom();
 
     public TlcCrypto() {
-        String encoded = System.getenv(ENV_NAME);
-        if (encoded == null || encoded.isBlank()) {
-            throw new IllegalStateException(ENV_NAME + " is not set");
-        }
-
-        final byte[] decoded;
-        try {
-            decoded = Base64.getDecoder().decode(encoded);
-        } catch (IllegalArgumentException ex) {
-            throw new IllegalStateException(ENV_NAME + " is not valid Base64", ex);
-        }
-
-        if (decoded.length != KEY_BYTES) {
-            throw new IllegalStateException(ENV_NAME + " must decode to exactly 32 bytes");
-        }
+        byte[] decoded = Base64.getDecoder().decode(TlcKeyStore.loadOrCreateEncodedKey());
         this.key = new SecretKeySpec(decoded, "AES");
     }
 
@@ -41,7 +25,8 @@ public final class TlcCrypto {
 
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
-            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
+            byte[] ciphertext = cipher.doFinal(
+                    plaintext.getBytes(StandardCharsets.UTF_8));
 
             byte[] packed = new byte[IV_BYTES + ciphertext.length];
             System.arraycopy(iv, 0, packed, 0, IV_BYTES);
@@ -62,7 +47,7 @@ public final class TlcCrypto {
             byte[] iv = new byte[IV_BYTES];
             byte[] ciphertext = new byte[packed.length - IV_BYTES];
             System.arraycopy(packed, 0, iv, 0, IV_BYTES);
-            System.arraycopy(packed, IV_BYTES, ciphertext, 0, ciphertext.length);
+            System.arraycopy(ciphertext, 0, packed, IV_BYTES, ciphertext.length);
 
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
