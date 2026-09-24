@@ -10,6 +10,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -23,6 +24,7 @@ import java.util.zip.ZipOutputStream;
 public final class TlcBackup {
     private static final String FORMAT = "TLC-BACKUP-1";
     private static final String DEFAULT_DATABASE_URL = "jdbc:sqlite:tlc.db";
+    private static final int KEY_BYTES = 32;
 
     private TlcBackup() {
     }
@@ -62,15 +64,13 @@ public final class TlcBackup {
             Files.createDirectories(parent);
         }
 
-        checkpoint(database);
+        checkpoint();
 
         try (OutputStream fileOut = Files.newOutputStream(output);
              ZipOutputStream zip = new ZipOutputStream(fileOut, StandardCharsets.UTF_8)) {
-
             addText(zip, "manifest.txt",
                     FORMAT + System.lineSeparator()
                             + "created=" + Instant.now() + System.lineSeparator());
-
             addFile(zip, "tlc.db", database);
             addFile(zip, "encryption.key", key);
         }
@@ -92,13 +92,13 @@ public final class TlcBackup {
                     "Restore requires a fresh TLC data location; existing database/key were not overwritten");
         }
 
-        Path parent = database.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
+        Path databaseParent = database.getParent();
+        if (databaseParent != null) {
+            Files.createDirectories(databaseParent);
         }
-        parent = key.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
+        Path keyParent = key.getParent();
+        if (keyParent != null) {
+            Files.createDirectories(keyParent);
         }
 
         Path tempDir = Files.createTempDirectory("tlc-restore-");
@@ -119,23 +119,26 @@ public final class TlcBackup {
                         continue;
                     }
 
-                    Path target;
                     if ("manifest.txt".equals(entry.getName())) {
-                        String manifest = new String(zip.readAllBytes(), StandardCharsets.UTF_8);
-                        validManifest = manifest.startsWith(FORMAT + System.lineSeparator());
+                        String manifest = new String(
+                                zip.readAllBytes(), StandardCharsets.UTF_8);
+                        validManifest = manifest.startsWith(
+                                FORMAT + System.lineSeparator());
                         continue;
                     }
+
                     if ("tlc.db".equals(entry.getName())) {
-                        target = tempDatabase;
+                        Files.copy(zip, tempDatabase,
+                                StandardCopyOption.REPLACE_EXISTING);
                         hasDatabase = true;
                     } else if ("encryption.key".equals(entry.getName())) {
-                        target = tempKey;
+                        Files.copy(zip, tempKey,
+                                StandardCopyOption.REPLACE_EXISTING);
                         hasKey = true;
                     } else {
-                        throw new IOException("Unexpected backup entry: " + entry.getName());
+                        throw new IOException(
+                                "Unexpected backup entry: " + entry.getName());
                     }
-
-                    Files.copy(zip, target, StandardCopyOption.REPLACE_EXISTING);
                 }
             }
 
@@ -143,25 +146,23 @@ public final class TlcBackup {
                 throw new IOException("Invalid TLC backup format");
             }
 
-            String encodedKey = Files.readString(tempKey, StandardCharsets.US_ASCII).trim();
-            if (!encodedKey.equals(TlcKeyStore.loadOrCreateEncodedKey())
-                    && !Files.exists(key)) {
-                // loadOrCreateEncodedKey() can create a new key, so this branch
-                // is intentionally only a format sanity check for fresh restores.
-            }
+            String encodedKey = Files.readString(
+                    tempKey, StandardCharsets.US_ASCII).trim();
+            validateKey(encodedKey);
 
             Files.move(tempDatabase, database, StandardCopyOption.ATOMIC_MOVE);
             Files.move(tempKey, key, StandardCopyOption.ATOMIC_MOVE);
         } finally {
             deleteIfExists(tempDatabase);
             deleteIfExists(tempKey);
-            Files.deleteIfExists(tempDir);
+            deleteIfExists(tempDir);
         }
     }
 
-    private static void checkpoint(Path database) throws Exception {
+    private static void checkpoint() throws Exception {
         try (Connection connection = DriverManager.getConnection(
-                System.getenv().getOrDefault("TLC_DATABASE_URL", DEFAULT_DATABASE_URL));
+                System.getenv().getOrDefault(
+                        "TLC_DATABASE_URL", DEFAULT_DATABASE_URL));
              Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA wal_checkpoint(FULL)");
         }
@@ -170,6 +171,7 @@ public final class TlcBackup {
     private static Path databasePath() {
         String url = System.getenv().getOrDefault(
                 "TLC_DATABASE_URL", DEFAULT_DATABASE_URL);
+
         if (!url.startsWith("jdbc:sqlite:")) {
             throw new IllegalStateException(
                     "TLC backup currently supports file-based SQLite JDBC URLs only");
@@ -184,15 +186,27 @@ public final class TlcBackup {
         return Paths.get(location).toAbsolutePath().normalize();
     }
 
-    private static void addText(ZipOutputStream zip, String name, String text)
-            throws IOException {
+    private static void validateKey(String encoded) {
+        try {
+            byte[] key = Base64.getDecoder().decode(encoded);
+            if (key.length != KEY_BYTES) {
+                throw new IllegalArgumentException();
+            }
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException(
+                    "Backup contains an invalid TLC encryption key", ex);
+        }
+    }
+
+    private static void addText(
+            ZipOutputStream zip, String name, String text) throws IOException {
         zip.putNextEntry(new ZipEntry(name));
         zip.write(text.getBytes(StandardCharsets.UTF_8));
         zip.closeEntry();
     }
 
-    private static void addFile(ZipOutputStream zip, String name, Path file)
-            throws IOException {
+    private static void addFile(
+            ZipOutputStream zip, String name, Path file) throws IOException {
         zip.putNextEntry(new ZipEntry(name));
         Files.copy(file, zip);
         zip.closeEntry();
