@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101827"><meta name="description" content="TLC local-first communication prototype"><title>TLC — Translocal Communication</title>
 <style>
-:root{color-scheme:dark;--bg:#09111e;--panel:#121e30;--line:#293b55;--text:#edf5ff;--muted:#a5b6cc;--accent:#63e6be;--nav:238px}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#1b3150,var(--bg) 68%);color:var(--text);font:16px/1.5 system-ui,sans-serif;padding-left:var(--nav)}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.sidebar{position:fixed;inset:0 auto 0 0;width:var(--nav);padding:24px 16px;background:#0b1423;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:22px;z-index:5}.brand{color:var(--accent);font-size:.78rem;font-weight:850;letter-spacing:.12em}.nav{display:grid;gap:8px}.nav a{padding:12px 14px;border-radius:12px;color:var(--muted);font-weight:650}.nav a[aria-current=page],.nav a:hover{background:#193047;color:var(--text);text-decoration:none}.nav a[aria-current=page]{box-shadow:inset 3px 0 var(--accent)}.sidebar small{margin-top:auto;color:var(--muted)}main{width:min(100%,900px);margin:0 auto;padding:28px clamp(14px,3vw,36px) 90px}h1{margin:.25rem 0;font-size:clamp(2rem,6vw,3.2rem);line-height:1.1}h2{margin-top:0}.lead,.muted,.note{color:var(--muted)}.lead{max-width:650px}.panel{background:rgba(18,30,48,.96);border:1px solid var(--line);border-radius:18px;padding:clamp(15px,3vw,22px);margin-top:18px;box-shadow:0 12px 32px #0002}.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}input,button{font:inherit;border-radius:11px;padding:12px;border:1px solid var(--line)}input{min-width:0;flex:1;background:#0b1424;color:var(--text)}button{background:var(--accent);color:#06231b;font-weight:800;cursor:pointer}button.secondary{background:#1b2b41;color:var(--text)}button:disabled{opacity:.6;cursor:wait}.status{padding:9px 0;color:var(--muted);overflow-wrap:anywhere} .note{font-size:.82rem}#messages{display:flex;flex-direction:column;gap:10px;min-height:180px;max-height:48vh;overflow:auto}.msg{padding:12px 14px;background:#0b1424;border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere}.msg strong{color:var(--accent)}.msg time{float:right;color:var(--muted);font-size:.75rem;margin-left:8px}label{display:block;color:var(--muted);font-size:.9rem;margin:10px 0 5px}button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid white;outline-offset:3px}.mobile-nav{display:none}
+:root{color-scheme:dark;--bg:#09111e;--panel:#121e30;--line:#293b55;--text:#edf5ff;--muted:#a5b6cc;--accent:#63e6be;--nav:238px}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#1b3150,var(--bg) 68%);color:var(--text);font:16px/1.5 system-ui,sans-serif;padding-left:var(--nav)}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.sidebar{position:fixed;inset:0 auto 0 0;width:var(--nav);padding:24px 16px;background:#0b1423;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:22px;z-index:5}.brand{color:var(--accent);font-size:.78rem;font-weight:850;letter-spacing:.12em}.nav{display:grid;gap:8px}.nav a{padding:12px 14px;border-radius:12px;color:var(--muted);font-weight:650}.nav a[aria-current=page],.nav a:hover{background:#193047;color:var(--text);text-decoration:none}.nav a[aria-current=page]{box-shadow:inset 3px 0 var(--accent)}.sidebar small{margin-top:auto;color:var(--muted)}main{width:min(100%,900px);margin:0 auto;padding:28px clamp(14px,3vw,36px) 90px}h1{margin:.25rem 0;font-size:clamp(2rem,6vw,3.2rem);line-height:1.1}h2{margin-top:0}.lead,.muted,.note{color:var(--muted)}.lead{max-width:650px}.panel{background:rgba(18,30,48,.96);border:1px solid var(--line);border-radius:18px;padding:clamp(15px,3vw,22px);margin-top:18px;box-shadow:0 12px 32px #0002}.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}input,button{font:inherit;border-radius:11px;padding:12px;border:1px solid var(--line)}input{min-width:0;flex:1;background:#0b1424;color:var(--text)}button{background:var(--accent);color:#06231b;font-weight:800;cursor:pointer}button.secondary{background:#1b2b41;color:var(--text)}button:disabled{opacity:.6;cursor:wait}.status{padding:9px 0;color:var(--muted);overflow-wrap:anywhere} .note{font-size:.82rem}#messages{display:flex;flex-direction:column;gap:10px;min-height:180px;max-height:48vh;overflow:auto;scroll-behavior:auto}.msg{padding:12px 14px;background:#0b1424;border:1px solid var(--line);border-radius:12px;overflow-wrap:anywhere}.msg strong{color:var(--accent)}.msg time{float:right;color:var(--muted);font-size:.75rem;margin-left:8px}label{display:block;color:var(--muted);font-size:.9rem;margin:10px 0 5px}button:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid white;outline-offset:3px}.mobile-nav{display:none}
 @media(max-width:720px){body{padding:0}.sidebar{display:none}main{padding:22px 14px 100px}.mobile-nav{position:fixed;display:grid;grid-template-columns:repeat(4,1fr);gap:5px;left:0;right:0;bottom:0;padding:8px max(8px,env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));background:#0b1423f5;border-top:1px solid var(--line);backdrop-filter:blur(12px);z-index:10}.mobile-nav a{text-align:center;padding:8px 2px;border-radius:10px;font-size:.78rem;color:var(--muted)}.mobile-nav a[aria-current=page]{background:#193047;color:var(--accent)}.row input{flex-basis:100%}.row button{flex:1}}
 </style></head>
 <body>
@@ -12,18 +12,174 @@
 <section class="panel"><h2>Server connection</h2><div id="status" class="status" role="status" aria-live="polite">Checking Java server…</div></section>
 <section class="panel"><h2>Account access</h2><div class="row"><input id="username" maxlength="24" autocomplete="username" placeholder="Username" aria-label="Username"><input id="password" type="password" minlength="12" maxlength="128" autocomplete="current-password" placeholder="Password" aria-label="Password"><button id="login" type="button">Sign in</button><button id="register" class="secondary" type="button">Create account</button><button id="logout" class="secondary" type="button">Sign out</button></div><div id="accountStatus" class="status" role="status" aria-live="polite">Not signed in</div><p class="note"><a href="account.html">Account settings</a> · <a href="profile.html">Profile details</a></p></section>
 <section class="panel"><h2>Send a message</h2><div class="row"><div style="flex:2;min-width:180px"><label for="message">Message</label><input id="message" maxlength="1000" placeholder="Write a message…" autocomplete="off"></div><button id="send" type="button">Send message</button></div><div class="row" style="margin-top:12px"><button id="refresh" class="secondary" type="button">Refresh messages</button><span class="note">Messages are stored persistently in SQLite and encrypted at rest.</span></div></section>
-<section class="panel"><h2>Local room</h2><div id="messages" aria-live="polite"><p class="muted">Sign in to load messages.</p></div></section><p class="note">Prototype: TLC uses server-side encryption at rest, not end-to-end encryption. Keep the server on a trusted network and do not expose it publicly.</p></main>
+<section class="panel"><h2>Local room</h2><div id="historyStatus" class="note" aria-live="polite">Sign in to load messages.</div><div id="messages" aria-live="polite"><p class="muted">Sign in to load messages.</p></div></section><p class="note">Prototype: TLC uses server-side encryption at rest, not end-to-end encryption. Keep the server on a trusted network and do not expose it publicly.</p></main>
 <nav class="mobile-nav" aria-label="Mobile navigation"><a href="index.html" aria-current="page">◈<br>Chat</a><a href="account.html">◉<br>Account</a><a href="profile.html">◎<br>Profile</a><a href="admin.html">⚙<br>Admin</a></nav>
 <script>
-const $=id=>document.getElementById(id);let connected=false,signedIn=false,refreshBusy=false,authBusy=false;
-async function request(path,body){const r=await fetch(path,{method:body!==undefined?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body!==undefined?{'Content-Type':'application/json'}:{},body:body!==undefined?JSON.stringify(body):undefined});let d={};try{d=await r.json()}catch{}return {r,d}}
-function status(s){$('status').textContent=s}function accountStatus(s){$('accountStatus').textContent=s}
-async function connect(){try{status('Checking Java server…');const {r,d}=await request('/api/status');if(!r.ok||d.status!=='TLC Java connected')throw Error('Unexpected server response');connected=true;status('Connected · '+location.origin);await checkSession()}catch(e){connected=false;status('Cannot reach Java server. Open this page through the running TLC Java server, not as a local file or GitHub Pages.')}}
-async function checkSession(){if(!connected)return;try{const {r,d}=await request('/api/account/me');if(!r.ok)throw Error(d.error||'Sign in with an approved account');signedIn=true;accountStatus('Signed in as '+d.username+' · '+d.status);await refreshMessages()}catch(e){signedIn=false;accountStatus(e.message);showEmpty('Sign in with an approved account to view messages.')}}
-async function authenticate(kind){if(authBusy)return;if(!connected){accountStatus('Java server is not connected.');return}const username=$('username').value.trim(),password=$('password').value;if(!username||!password){accountStatus('Enter username and password.');return}authBusy=true;['login','register'].forEach(id=>$(id).disabled=true);try{const {r,d}=await request(kind==='login'?'/api/login':'/api/register',{username,password});$('password').value='';if(!r.ok){if(d.status==='AWAITING_SYSADMIN_APPROVAL')throw Error('Account is awaiting administrator approval.');throw Error(d.error||(kind==='login'?'Sign in failed':'Registration failed'))}if(kind==='login'){await checkSession()}else accountStatus('Account created. Await administrator approval.')}catch(e){accountStatus(e.message)}finally{authBusy=false;['login','register'].forEach(id=>$(id).disabled=false)}}
-async function logout(){if(!connected||authBusy)return;authBusy=true;$('logout').disabled=true;try{const {r,d}=await request('/api/logout',{});if(!r.ok)throw Error(d.error||'Sign out failed');signedIn=false;accountStatus('Signed out.');showEmpty('Sign in to load messages.')}catch(e){accountStatus(e.message)}finally{authBusy=false;$('logout').disabled=false}}
-function showEmpty(message){const root=$('messages');root.replaceChildren();const p=document.createElement('p');p.className='muted';p.textContent=message;root.append(p)}
-async function refreshMessages(){if(!connected||!signedIn||refreshBusy)return;refreshBusy=true;$('refresh').disabled=true;try{const {r,d}=await request('/api/messages');if(!r.ok)throw Error(d.error||'Chat access denied');const root=$('messages');root.replaceChildren();if(!Array.isArray(d.messages)||!d.messages.length){showEmpty('No messages yet.');return}for(const m of d.messages){const card=document.createElement('div');card.className='msg';const head=document.createElement('div'),name=document.createElement('strong');name.textContent=m.sender||'Member';head.append(name);if(m.time){const time=document.createElement('time'),date=new Date(m.time);time.textContent=isNaN(date.getTime())?'':date.toLocaleTimeString();head.append(time)}const body=document.createElement('div');body.textContent=m.text||'';card.append(head,body);root.append(card)}root.scrollTop=root.scrollHeight;status('Chat loaded · '+d.messages.length+' message(s)')}catch(e){status(e.message);if(/login|approved|access/i.test(e.message)){signedIn=false;accountStatus(e.message)}}finally{refreshBusy=false;$('refresh').disabled=false}}
-async function sendMessage(){if(!connected||!signedIn){accountStatus('Sign in with an approved account first.');return}const text=$('message').value.trim();if(!text){status('Type a message first.');return}const b=$('send');b.disabled=true;try{const {r,d}=await request('/api/messages',{text});if(!r.ok)throw Error(d.error||'Send failed');$('message').value='';await refreshMessages()}catch(e){status('Send failed: '+e.message)}finally{b.disabled=false}}
-$('login').addEventListener('click',()=>authenticate('login'));$('register').addEventListener('click',()=>authenticate('register'));$('logout').addEventListener('click',logout);$('refresh').addEventListener('click',refreshMessages);$('send').addEventListener('click',sendMessage);$('message').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sendMessage}});connect();setInterval(()=>{if(connected&&signedIn&&!document.hidden)refreshMessages()},5000);
+const $=id=>document.getElementById(id);
+let connected=false,signedIn=false,refreshBusy=false,historyBusy=false,authBusy=false;
+let messagesById=new Map(),historyExhausted=false,initialLoad=true;
+
+async function request(path,body){
+ const r=await fetch(path,{method:body!==undefined?'POST':'GET',credentials:'same-origin',cache:'no-store',
+ headers:body!==undefined?{'Content-Type':'application/json'}:{},body:body!==undefined?JSON.stringify(body):undefined});
+ let d={};try{d=await r.json()}catch{}return {r,d};
+}
+function status(s){$('status').textContent=s}
+function accountStatus(s){$('accountStatus').textContent=s}
+function historyStatus(s){$('historyStatus').textContent=s}
+
+async function connect(){
+ try{
+  status('Checking Java server…');
+  const {r,d}=await request('/api/status');
+  if(!r.ok||d.status!=='TLC Java connected')throw Error('Unexpected server response');
+  connected=true;status('Connected · '+location.origin);await checkSession();
+ }catch(e){
+  connected=false;status('Cannot reach Java server. Open this page through the running TLC Java server, not as a local file or GitHub Pages.');
+ }
+}
+
+async function checkSession(){
+ if(!connected)return;
+ try{
+  const {r,d}=await request('/api/account/me');
+  if(!r.ok)throw Error(d.error||'Sign in with an approved account');
+  signedIn=true;accountStatus('Signed in as '+d.username+' · '+d.status);
+  await refreshMessages(true);
+ }catch(e){
+  signedIn=false;accountStatus(e.message);clearMessages('Sign in with an approved account to view messages.');
+ }
+}
+
+async function authenticate(kind){
+ if(authBusy)return;
+ if(!connected){accountStatus('Java server is not connected.');return}
+ const username=$('username').value.trim(),password=$('password').value;
+ if(!username||!password){accountStatus('Enter username and password.');return}
+ authBusy=true;['login','register'].forEach(id=>$(id).disabled=true);
+ try{
+  const {r,d}=await request(kind==='login'?'/api/login':'/api/register',{username,password});
+  $('password').value='';
+  if(!r.ok){
+   if(d.status==='AWAITING_SYSADMIN_APPROVAL')throw Error('Account is awaiting administrator approval.');
+   throw Error(d.error||(kind==='login'?'Sign in failed':'Registration failed'));
+  }
+  if(kind==='login')await checkSession();else accountStatus('Account created. Await administrator approval.');
+ }catch(e){accountStatus(e.message)}
+ finally{authBusy=false;['login','register'].forEach(id=>$(id).disabled=false)}
+}
+
+async function logout(){
+ if(!connected||authBusy)return;
+ authBusy=true;$('logout').disabled=true;
+ try{
+  const {r,d}=await request('/api/logout',{});
+  if(!r.ok)throw Error(d.error||'Sign out failed');
+  signedIn=false;accountStatus('Signed out.');clearMessages('Sign in to load messages.');
+ }catch(e){accountStatus(e.message)}
+ finally{authBusy=false;$('logout').disabled=false}
+}
+
+function clearMessages(message){
+ messagesById=new Map();historyExhausted=false;initialLoad=true;
+ const root=$('messages');root.replaceChildren();
+ const p=document.createElement('p');p.className='muted';p.textContent=message;root.append(p);
+ historyStatus('');
+}
+
+function sortedMessages(){
+ return [...messagesById.values()].sort((a,b)=>Number(a.id)-Number(b.id));
+}
+
+function renderMessages(){
+ const root=$('messages'),atBottom=root.scrollHeight-root.scrollTop-root.clientHeight<30;
+ root.replaceChildren();
+ const all=sortedMessages();
+ if(!all.length){
+  const p=document.createElement('p');p.className='muted';p.textContent='No messages yet.';root.append(p);return;
+ }
+ for(const m of all){
+  const card=document.createElement('div');card.className='msg';card.dataset.id=m.id;
+  const head=document.createElement('div'),name=document.createElement('strong');
+  name.textContent=m.sender||'Member';head.append(name);
+  if(m.time){
+   const time=document.createElement('time'),date=new Date(m.time);
+   time.textContent=isNaN(date.getTime())?'':date.toLocaleTimeString();head.append(time);
+  }
+  const body=document.createElement('div');body.textContent=m.text||'';card.append(head,body);root.append(card);
+ }
+ if(atBottom)root.scrollTop=root.scrollHeight;
+}
+
+function mergeMessages(list){
+ for(const m of list||[]){
+  if(m&&m.id)messagesById.set(String(m.id),m);
+ }
+}
+
+async function refreshMessages(initial=false){
+ if(!connected||!signedIn||refreshBusy||historyBusy)return;
+ refreshBusy=true;$('refresh').disabled=true;
+ const root=$('messages'),wasAtBottom=root.scrollHeight-root.scrollTop-root.clientHeight<30;
+ try{
+  const {r,d}=await request('/api/messages');
+  if(!r.ok)throw Error(d.error||'Chat access denied');
+  if(initial||initialLoad){
+   messagesById=new Map();historyExhausted=false;initialLoad=false;
+  }
+  mergeMessages(d.messages);
+  renderMessages();
+  if(initial||wasAtBottom)root.scrollTop=root.scrollHeight;
+  historyStatus(historyExhausted?'You are at the beginning of the chat history.':'Scroll to the top to load older messages.');
+  status('Chat loaded · '+messagesById.size+' message(s)');
+ }catch(e){
+  status(e.message);
+  if(/login|approved|access/i.test(e.message)){signedIn=false;accountStatus(e.message)}
+ }finally{refreshBusy=false;$('refresh').disabled=false}
+}
+
+async function loadOlderMessages(){
+ if(!connected||!signedIn||historyBusy||historyExhausted||messagesById.size===0)return;
+ const root=$('messages'),oldHeight=root.scrollHeight,oldTop=root.scrollTop;
+ const first=sortedMessages()[0];
+ if(!first)return;
+ historyBusy=true;historyStatus('Loading older messages…');
+ try{
+  const {r,d}=await request('/api/messages?before='+encodeURIComponent(first.id));
+  if(!r.ok)throw Error(d.error||'Could not load older messages');
+  if(!Array.isArray(d.messages)||!d.messages.length){
+   historyExhausted=true;historyStatus('You are at the beginning of the chat history.');return;
+  }
+  mergeMessages(d.messages);renderMessages();
+  root.scrollTop=root.scrollHeight-oldHeight+oldTop;
+  if(d.messages.length<Number(d.pageSize||50))historyExhausted=true;
+  historyStatus(historyExhausted?'You are at the beginning of the chat history.':'Scroll to the top for more history.');
+ }catch(e){historyStatus('History load failed: '+e.message)}
+ finally{historyBusy=false}
+}
+
+async function sendMessage(){
+ if(!connected||!signedIn){accountStatus('Sign in with an approved account first.');return}
+ const text=$('message').value.trim();if(!text){status('Type a message first.');return}
+ const b=$('send');b.disabled=true;
+ try{
+  const {r,d}=await request('/api/messages',{text});
+  if(!r.ok)throw Error(d.error||'Send failed');
+  $('message').value='';await refreshMessages();
+ }catch(e){status('Send failed: '+e.message)}
+ finally{b.disabled=false}
+}
+
+$('login').addEventListener('click',()=>authenticate('login'));
+$('register').addEventListener('click',()=>authenticate('register'));
+$('logout').addEventListener('click',logout);
+$('refresh').addEventListener('click',()=>refreshMessages());
+$('send').addEventListener('click',sendMessage);
+$('message').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();sendMessage()}});
+$('messages').addEventListener('scroll',()=>{
+ const root=$('messages');
+ if(root.scrollTop<80)loadOlderMessages();
+});
+connect();
+setInterval(()=>{if(connected&&signedIn&&!document.hidden)refreshMessages()},5000);
 </script></body></html>
