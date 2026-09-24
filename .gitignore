@@ -1,0 +1,27 @@
+# TLC runtime data and secrets
+tlc.db
+tlc.db-shm
+tlc.db-wal
+tlc-data/
+*.tlcb
+TLC_Backup.tlcb
+
+# Local Java/build output
+*.class
+*.jar
+out/
+build/
+
+# Android/Gradle local files
+.gradle/
+local.properties
+*.keystore
+*.jks
+
+# Windows installer output
+Installer/Windows/dist/
+
+# Local/editor files
+.idea/
+.vscode/
+*.swp
