@@ -16,35 +16,31 @@ public final class TlcKeyStore {
     }
 
     public static String loadOrCreateEncodedKey() {
-        String environmentKey = System.getenv(ENV_NAME);
-        if (environmentKey != null && !environmentKey.isBlank()) {
-            byte[] decoded = decode(environmentKey);
-            persistIfMissing(decoded);
-            return Base64.getEncoder().encodeToString(decoded);
-        }
-
         Path keyFile = keyPath();
+
         try {
             if (Files.isRegularFile(keyFile)) {
                 return Base64.getEncoder().encodeToString(
-                        decode(Files.readString(keyFile, StandardCharsets.US_ASCII).trim()));
+                        decode(Files.readString(
+                                keyFile, StandardCharsets.US_ASCII).trim()));
             }
-
-            byte[] generated = new byte[KEY_BYTES];
-            new SecureRandom().nextBytes(generated);
-            String encoded = Base64.getEncoder().encodeToString(generated);
-
-            Path parent = keyFile.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.writeString(keyFile, encoded + System.lineSeparator(),
-                    StandardCharsets.US_ASCII);
-            return encoded;
         } catch (IOException ex) {
             throw new IllegalStateException(
-                    "Could not create or read TLC encryption key: " + keyFile, ex);
+                    "Could not read TLC encryption key: " + keyFile, ex);
         }
+
+        String environmentKey = System.getenv(ENV_NAME);
+        if (environmentKey != null && !environmentKey.isBlank()) {
+            byte[] decoded = decode(environmentKey);
+            persist(decoded);
+            return Base64.getEncoder().encodeToString(decoded);
+        }
+
+        byte[] generated = new byte[KEY_BYTES];
+        new SecureRandom().nextBytes(generated);
+        String encoded = Base64.getEncoder().encodeToString(generated);
+        persist(generated);
+        return encoded;
     }
 
     public static Path keyPath() {
@@ -52,12 +48,9 @@ public final class TlcKeyStore {
                 .toAbsolutePath().normalize();
     }
 
-    private static void persistIfMissing(byte[] key) {
+    private static void persist(byte[] key) {
         Path file = keyPath();
         try {
-            if (Files.exists(file)) {
-                return;
-            }
             Path parent = file.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
@@ -79,6 +72,7 @@ public final class TlcKeyStore {
             throw new IllegalStateException(
                     ENV_NAME + " is not valid Base64", ex);
         }
+
         if (decoded.length != KEY_BYTES) {
             throw new IllegalStateException(
                     "TLC encryption key must decode to exactly 32 bytes");
