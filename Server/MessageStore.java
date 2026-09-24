@@ -12,6 +12,7 @@ import java.util.Map;
 
 /** Stores encrypted TLC messages in the same configured database as account data. */
 public final class MessageStore {
+    private static final String ENCRYPTED_PREFIX = "v1:";
     private final String jdbcUrl;
     private final TlcCrypto crypto;
 
@@ -19,9 +20,12 @@ public final class MessageStore {
         if (jdbcUrl == null || jdbcUrl.isBlank()) {
             throw new IllegalArgumentException("jdbcUrl must not be blank");
         }
+
         this.jdbcUrl = jdbcUrl;
         this.crypto = new TlcCrypto();
-        try (Connection connection = open(); Statement statement = connection.createStatement()) {
+
+        try (Connection connection = open();
+             Statement statement = connection.createStatement()) {
             statement.executeUpdate(
                     "CREATE TABLE IF NOT EXISTS messages (" +
                     "id INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -29,6 +33,8 @@ public final class MessageStore {
                     "text TEXT NOT NULL," +
                     "sent_at TEXT NOT NULL)");
         }
+
+        migrateLegacyMessages();
     }
 
     private Connection open() throws SQLException {
@@ -37,20 +43,9 @@ public final class MessageStore {
 
     public synchronized void add(String sender, String text, String sentAt, int maxMessages)
             throws SQLException {
-        if (sender == null || sender.isBlank()) {
-            throw new IllegalArgumentException("sender must not be blank");
-        }
-        if (text == null || text.isBlank()) {
-            throw new IllegalArgumentException("text must not be blank");
-        }
-        if (sentAt == null || sentAt.isBlank()) {
-            throw new IllegalArgumentException("sentAt must not be blank");
-        }
-        if (maxMessages < 1) {
-            throw new IllegalArgumentException("maxMessages must be at least 1");
-        }
+        validate(sender, text, sentAt, maxMessages);
 
-        String encryptedText = crypto.encrypt(text);
+        String encryptedText = ENCRYPTED_PREFIX + crypto.encrypt(text);
 
         try (Connection connection = open()) {
             connection.setAutoCommit(false);
@@ -62,12 +57,14 @@ public final class MessageStore {
                     insert.setString(3, sentAt);
                     insert.executeUpdate();
                 }
+
                 try (PreparedStatement trim = connection.prepareStatement(
                         "DELETE FROM messages WHERE id NOT IN " +
                         "(SELECT id FROM messages ORDER BY id DESC LIMIT ?)")) {
                     trim.setInt(1, maxMessages);
                     trim.executeUpdate();
                 }
+
                 connection.commit();
             } catch (SQLException exception) {
                 try {
@@ -86,21 +83,91 @@ public final class MessageStore {
         }
 
         List<Map<String, String>> messages = new ArrayList<>();
+
         try (Connection connection = open();
              PreparedStatement query = connection.prepareStatement(
                      "SELECT sender, text, sent_at FROM messages ORDER BY id DESC LIMIT ?")) {
             query.setInt(1, maxMessages);
+
             try (ResultSet rows = query.executeQuery()) {
                 while (rows.next()) {
                     Map<String, String> message = new LinkedHashMap<>();
                     message.put("sender", rows.getString("sender"));
-                    message.put("text", crypto.decrypt(rows.getString("text")));
+                    message.put("text", decryptStored(rows.getString("text")));
                     message.put("time", rows.getString("sent_at"));
                     messages.add(message);
                 }
             }
         }
+
         Collections.reverse(messages);
         return messages;
+    }
+
+    /**
+     * Converts messages written by older TLC versions to encrypted storage.
+     * The migration happens once at startup while the encryption key is available.
+     */
+    private void migrateLegacyMessages() throws SQLException {
+        try (Connection connection = open();
+             PreparedStatement query = connection.prepareStatement(
+                     "SELECT id, text FROM messages WHERE text NOT LIKE ?")) {
+            query.setString(1, ENCRYPTED_PREFIX + "%");
+
+            List<Long> ids = new ArrayList<>();
+            List<String> plaintext = new ArrayList<>();
+
+            try (ResultSet rows = query.executeQuery()) {
+                while (rows.next()) {
+                    ids.add(rows.getLong("id"));
+                    plaintext.add(rows.getString("text"));
+                }
+            }
+
+            if (ids.isEmpty()) {
+                return;
+            }
+
+            connection.setAutoCommit(false);
+            try (PreparedStatement update = connection.prepareStatement(
+                    "UPDATE messages SET text = ? WHERE id = ?")) {
+                for (int i = 0; i < ids.size(); i++) {
+                    update.setString(1, ENCRYPTED_PREFIX + crypto.encrypt(plaintext.get(i)));
+                    update.setLong(2, ids.get(i));
+                    update.addBatch();
+                }
+                update.executeBatch();
+                connection.commit();
+            } catch (SQLException exception) {
+                try {
+                    connection.rollback();
+                } catch (SQLException rollbackException) {
+                    exception.addSuppressed(rollbackException);
+                }
+                throw exception;
+            }
+        }
+    }
+
+    private String decryptStored(String stored) {
+        if (!stored.startsWith(ENCRYPTED_PREFIX)) {
+            throw new IllegalStateException("Found unencrypted TLC message after migration");
+        }
+        return crypto.decrypt(stored.substring(ENCRYPTED_PREFIX.length()));
+    }
+
+    private static void validate(String sender, String text, String sentAt, int maxMessages) {
+        if (sender == null || sender.isBlank()) {
+            throw new IllegalArgumentException("sender must not be blank");
+        }
+        if (text == null || text.isBlank()) {
+            throw new IllegalArgumentException("text must not be blank");
+        }
+        if (sentAt == null || sentAt.isBlank()) {
+            throw new IllegalArgumentException("sentAt must not be blank");
+        }
+        if (maxMessages < 1) {
+            throw new IllegalArgumentException("maxMessages must be at least 1");
+        }
     }
 }
