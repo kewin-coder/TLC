@@ -378,7 +378,9 @@ public final class TlcServer {
             }
 
             Map<String, String> message = messages.get(i);
-            json.append("{\"sender\":\"")
+            json.append("{\"id\":\"")
+                    .append(escapeJsonString(message.get("id")))
+                    .append("\",\"sender\":\"")
                     .append(escapeJsonString(message.get("sender")))
                     .append("\",\"text\":\"")
                     .append(escapeJsonString(message.get("text")))
