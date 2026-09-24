@@ -2,8 +2,8 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.security.SecureRandom;
+import java.util.Base64;
 
 /** AES-256-GCM encryption for TLC message data. */
 public final class TlcCrypto {
@@ -47,7 +47,7 @@ public final class TlcCrypto {
             byte[] iv = new byte[IV_BYTES];
             byte[] ciphertext = new byte[packed.length - IV_BYTES];
             System.arraycopy(packed, 0, iv, 0, IV_BYTES);
-            System.arraycopy(ciphertext, 0, packed, IV_BYTES, ciphertext.length);
+            System.arraycopy(packed, IV_BYTES, ciphertext, 0, ciphertext.length);
 
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
