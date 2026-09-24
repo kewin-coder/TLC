@@ -25,7 +25,7 @@ public final class TlcServer {
             .toAbsolutePath()
             .normalize();
     private static final Pattern JSON_FIELD = Pattern.compile(
-            "\"(sender|text)\"\s*:\s*\"((?:\\.|[^\"\\])*)\"");
+            "\\\"(sender|text)\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"\\\\])*)\\\"");
 
     private static AccountApi accountApi;
     private static ServerDependencies1 dependencies;
