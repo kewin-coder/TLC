@@ -32,6 +32,8 @@ public final class MessageStore {
                     "sender TEXT NOT NULL," +
                     "text TEXT NOT NULL," +
                     "sent_at TEXT NOT NULL)");
+            statement.executeUpdate(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_id ON messages(id)");
         }
 
         migrateLegacyMessages();
@@ -41,57 +43,64 @@ public final class MessageStore {
         return DriverManager.getConnection(jdbcUrl);
     }
 
-    public synchronized void add(String sender, String text, String sentAt, int maxMessages)
+    public synchronized void add(String sender, String text, String sentAt, int ignoredLimit)
             throws SQLException {
-        validate(sender, text, sentAt, maxMessages);
+        validate(sender, text, sentAt);
 
         String encryptedText = ENCRYPTED_PREFIX + crypto.encrypt(text);
 
-        try (Connection connection = open()) {
-            connection.setAutoCommit(false);
-            try {
-                try (PreparedStatement insert = connection.prepareStatement(
-                        "INSERT INTO messages(sender, text, sent_at) VALUES(?, ?, ?)")) {
-                    insert.setString(1, sender);
-                    insert.setString(2, encryptedText);
-                    insert.setString(3, sentAt);
-                    insert.executeUpdate();
-                }
-
-                try (PreparedStatement trim = connection.prepareStatement(
-                        "DELETE FROM messages WHERE id NOT IN " +
-                        "(SELECT id FROM messages ORDER BY id DESC LIMIT ?)")) {
-                    trim.setInt(1, maxMessages);
-                    trim.executeUpdate();
-                }
-
-                connection.commit();
-            } catch (SQLException exception) {
-                try {
-                    connection.rollback();
-                } catch (SQLException rollbackException) {
-                    exception.addSuppressed(rollbackException);
-                }
-                throw exception;
-            }
+        try (Connection connection = open();
+             PreparedStatement insert = connection.prepareStatement(
+                     "INSERT INTO messages(sender, text, sent_at) VALUES(?, ?, ?)")) {
+            insert.setString(1, sender);
+            insert.setString(2, encryptedText);
+            insert.setString(3, sentAt);
+            insert.executeUpdate();
         }
     }
 
-    public synchronized List<Map<String, String>> latest(int maxMessages) throws SQLException {
-        if (maxMessages < 1) {
-            throw new IllegalArgumentException("maxMessages must be at least 1");
+    /** Returns the newest page, ordered oldest-to-newest for display. */
+    public synchronized List<Map<String, String>> latest(int limit) throws SQLException {
+        validateLimit(limit);
+        return queryPage(
+                "SELECT id, sender, text, sent_at FROM messages " +
+                "ORDER BY id DESC LIMIT ?",
+                limit);
+    }
+
+    /** Returns messages older than beforeId, ordered oldest-to-newest. */
+    public synchronized List<Map<String, String>> olderThan(long beforeId, int limit)
+            throws SQLException {
+        validateLimit(limit);
+        if (beforeId < 1) {
+            throw new IllegalArgumentException("beforeId must be at least 1");
         }
 
+        return queryPage(
+                "SELECT id, sender, text, sent_at FROM messages " +
+                "WHERE id < ? ORDER BY id DESC LIMIT ?",
+                beforeId,
+                limit);
+    }
+
+    private List<Map<String, String>> queryPage(String sql, Object... values)
+            throws SQLException {
         List<Map<String, String>> messages = new ArrayList<>();
 
         try (Connection connection = open();
-             PreparedStatement query = connection.prepareStatement(
-                     "SELECT sender, text, sent_at FROM messages ORDER BY id DESC LIMIT ?")) {
-            query.setInt(1, maxMessages);
+             PreparedStatement query = connection.prepareStatement(sql)) {
+            for (int i = 0; i < values.length; i++) {
+                if (values[i] instanceof Long) {
+                    query.setLong(i + 1, (Long) values[i]);
+                } else {
+                    query.setInt(i + 1, (Integer) values[i]);
+                }
+            }
 
             try (ResultSet rows = query.executeQuery()) {
                 while (rows.next()) {
                     Map<String, String> message = new LinkedHashMap<>();
+                    message.put("id", Long.toString(rows.getLong("id")));
                     message.put("sender", rows.getString("sender"));
                     message.put("text", decryptStored(rows.getString("text")));
                     message.put("time", rows.getString("sent_at"));
@@ -102,6 +111,12 @@ public final class MessageStore {
 
         Collections.reverse(messages);
         return messages;
+    }
+
+    private static void validateLimit(int limit) {
+        if (limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("limit must be between 1 and 100");
+        }
     }
 
     /**
@@ -156,7 +171,7 @@ public final class MessageStore {
         return crypto.decrypt(stored.substring(ENCRYPTED_PREFIX.length()));
     }
 
-    private static void validate(String sender, String text, String sentAt, int maxMessages) {
+    private static void validate(String sender, String text, String sentAt) {
         if (sender == null || sender.isBlank()) {
             throw new IllegalArgumentException("sender must not be blank");
         }
@@ -165,9 +180,6 @@ public final class MessageStore {
         }
         if (sentAt == null || sentAt.isBlank()) {
             throw new IllegalArgumentException("sentAt must not be blank");
-        }
-        if (maxMessages < 1) {
-            throw new IllegalArgumentException("maxMessages must be at least 1");
         }
     }
 }
